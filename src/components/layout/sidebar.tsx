@@ -177,7 +177,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
       <aside
         className={cn(
           // Mobile: fixed drawer that slides in from the left.
-          "fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col border-r border-sidebar-border bg-sidebar",
+          "fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col border-r border-sidebar-border bg-sidebar/80 backdrop-blur-xl",
           "transition-transform duration-200 ease-out will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
           // Desktop: static, always visible — reset all the mobile framing.

@@ -44,9 +44,9 @@ export default function ForgotPasswordPage() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
+      <div className="flex min-h-screen flex-col items-center justify-center px-4">
         <BrandLogo className="mb-8 h-14 w-auto" />
-        <Card className="w-full max-w-md border-border bg-card">
+        <Card className="w-full max-w-md">
           <CardHeader className="items-center text-center">
             <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
               <CheckCircle className="h-6 w-6 text-primary" />
@@ -76,9 +76,9 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center px-4">
       <BrandLogo className="mb-8 h-14 w-auto" priority />
-      <Card className="w-full max-w-md border-border bg-card">
+      <Card className="w-full max-w-md">
         <CardHeader className="items-center text-center">
           <CardTitle className="text-xl text-foreground">Reset password</CardTitle>
           <CardDescription className="text-muted-foreground">

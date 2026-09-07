@@ -88,34 +88,35 @@
 
 :root,
 html[data-mode="dark"] {
-  /* Neutrals sampled from the SPOT ON mark: true black fill,
-   * #4D4D4D / #555 trim, #A6A6A6 silver type. */
-  --background: oklch(0 0 0);
-  --foreground: oklch(1 0 0);
-  --card: oklch(0.1 0 0);
-  --card-2: oklch(0.145 0 0);
-  --card-foreground: oklch(1 0 0);
-  --popover: oklch(0.1 0 0);
-  --popover-foreground: oklch(1 0 0);
-  --secondary: oklch(0.18 0 0);
-  --secondary-foreground: oklch(1 0 0);
-  --muted: oklch(0.18 0 0);
-  --muted-foreground: oklch(0.725 0 0);
-  --accent: oklch(0.18 0 0);
-  --accent-foreground: oklch(1 0 0);
-  --destructive: oklch(0.5 0.2 25);
-  --border: oklch(0.42 0 0);
-  --input: oklch(0.42 0 0);
-  --chart-2: oklch(0.725 0 0);
-  --chart-3: oklch(0.45 0 0);
-  --chart-4: oklch(0.35 0 0);
-  --chart-5: oklch(0.22 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0 0 0);
-  --sidebar-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.18 0 0);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(0.42 0 0);
+  /* Cinematic dark: warm near-black with a crimson wash, hairline
+   * white trim, silver type. Inspired by the Valina board (velvet
+   * red, glass tile, neon streak) while keeping SPOT ON red. */
+  --background: oklch(0.07 0.018 25);
+  --foreground: oklch(0.99 0 0);
+  --card: oklch(0.16 0.02 25 / 0.55);
+  --card-2: oklch(0.2 0.025 25 / 0.45);
+  --card-foreground: oklch(0.99 0 0);
+  --popover: oklch(0.14 0.02 25 / 0.82);
+  --popover-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.2 0.02 25 / 0.7);
+  --secondary-foreground: oklch(0.99 0 0);
+  --muted: oklch(0.2 0.02 25 / 0.55);
+  --muted-foreground: oklch(0.78 0.01 25);
+  --accent: oklch(0.22 0.03 25 / 0.55);
+  --accent-foreground: oklch(0.99 0 0);
+  --destructive: oklch(0.58 0.2 25);
+  --border: oklch(1 0 0 / 0.12);
+  --input: oklch(1 0 0 / 0.14);
+  --chart-2: oklch(0.78 0.01 25);
+  --chart-3: oklch(0.5 0.04 25);
+  --chart-4: oklch(0.36 0.03 25);
+  --chart-5: oklch(0.24 0.02 25);
+  --radius: 0.85rem;
+  --sidebar: oklch(0.08 0.02 25 / 0.72);
+  --sidebar-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.22 0.03 25 / 0.55);
+  --sidebar-accent-foreground: oklch(0.99 0 0);
+  --sidebar-border: oklch(1 0 0 / 0.1);
 }
 
 html[data-mode="light"] {
@@ -153,9 +154,9 @@ html[data-mode="light"] {
 html[data-theme="spoton"] {
   --primary: oklch(0.585 0.225 27);
   --primary-foreground: oklch(1 0 0);
-  --primary-hover: oklch(0.64 0.22 27);
-  --primary-soft: oklch(0.585 0.225 27 / 0.12);
-  --primary-soft-2: oklch(0.585 0.225 27 / 0.22);
+  --primary-hover: oklch(0.66 0.22 27);
+  --primary-soft: oklch(0.585 0.225 27 / 0.16);
+  --primary-soft-2: oklch(0.585 0.225 27 / 0.3);
   --ring: oklch(0.585 0.225 27);
   --chart-1: oklch(0.585 0.225 27);
   --sidebar-primary: oklch(0.585 0.225 27);
@@ -241,5 +242,60 @@ html[data-theme="rose"] {
   }
   html {
     @apply font-sans;
+  }
+
+  /* Ambient crimson wash + neon streak — dark mode only. */
+  html[data-mode="dark"] body {
+    background-color: var(--background);
+    background-image:
+      radial-gradient(
+        1100px 520px at 88% -8%,
+        oklch(0.5 0.22 25 / 0.42),
+        transparent 58%
+      ),
+      radial-gradient(
+        800px 480px at -5% 108%,
+        oklch(0.38 0.18 25 / 0.28),
+        transparent 52%
+      ),
+      linear-gradient(
+        180deg,
+        oklch(0.1 0.03 25) 0%,
+        var(--background) 28%,
+        var(--background) 100%
+      );
+    background-attachment: fixed;
+  }
+
+  html[data-mode="dark"] [data-slot="card"] {
+    background: oklch(1 0 0 / 0.045);
+    backdrop-filter: blur(22px) saturate(1.25);
+    box-shadow:
+      inset 0 1px 0 oklch(1 0 0 / 0.16),
+      0 0 0 1px oklch(1 0 0 / 0.08),
+      0 24px 60px oklch(0 0 0 / 0.45);
+  }
+
+  html[data-mode="dark"] [data-slot="button"][data-variant="default"],
+  html[data-mode="dark"] button.bg-primary {
+    box-shadow:
+      0 0 0 1px oklch(1 0 0 / 0.08),
+      0 0 28px oklch(0.585 0.225 27 / 0.42);
+  }
+}
+
+@layer utilities {
+  .surface-glass {
+    background: oklch(1 0 0 / 0.045);
+    backdrop-filter: blur(22px) saturate(1.25);
+    box-shadow:
+      inset 0 1px 0 oklch(1 0 0 / 0.14),
+      0 0 0 1px oklch(1 0 0 / 0.08);
+  }
+
+  html[data-mode="light"] .surface-glass {
+    background: var(--card);
+    backdrop-filter: none;
+    box-shadow: none;
   }
 }
