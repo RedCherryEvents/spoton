@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 export type ChipVariant = 'owner' | 'admin' | 'ok' | 'warn' | 'muted';
 
 const VARIANTS: Record<ChipVariant, string> = {
-  owner: 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300',
+  owner: 'border-border bg-secondary text-foreground',
   admin: 'border-primary-soft-2 bg-primary-soft text-primary',
   ok: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
   warn: 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300',

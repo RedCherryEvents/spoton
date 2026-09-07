@@ -71,8 +71,8 @@ export const THEMES: ReadonlyArray<ThemeMeta> = [
   {
     id: "spoton",
     name: "Spot On",
-    tagline: "Brand red on black — the SPOT ON signal.",
-    swatch: "oklch(0.585 0.225 27)",
+    tagline: "Power-button red on black — sampled from the mark.",
+    swatch: "#E31E24",
   },
   {
     id: "violet",
