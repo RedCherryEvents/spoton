@@ -64,10 +64,10 @@ const SECURITY_HEADERS = [
 ] as const;
 
 const nextConfig: NextConfig = {
-  // Emit a self-contained server bundle (.next/standalone) so the
-  // Docker image can run without node_modules or the Next CLI.
-  // Harmless outside Docker: `next start` keeps working as before.
-  output: "standalone",
+  // Docker / Hostinger images need a self-contained server bundle.
+  // Vercel sets VERCEL=1 and owns the output itself — standalone
+  // there leaves the deployment with no routable files (platform 404).
+  ...(process.env.VERCEL ? {} : { output: "standalone" as const }),
 
   /**
    * Cross-origin dev access (Next.js 16).
