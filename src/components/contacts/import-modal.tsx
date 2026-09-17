@@ -19,6 +19,7 @@ import {
 } from '@/lib/contacts/resolve-import-tags';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { dispatchClientTrigger } from '@/lib/automations/client-dispatch';
 import {
   Dialog,
   DialogContent,
@@ -263,6 +264,7 @@ export function ImportModal({
       }
 
       const tagAssignments: ContactTagAssignment[] = [];
+      const createdIds: string[] = [];
 
       // 4) Batch insert the genuinely-new rows in chunks of 50. The DB
       //    unique index is the backstop: a 23505 (race, or a format
@@ -299,6 +301,7 @@ export function ImportModal({
 
             if (!singleErr && singleData) {
               imported++;
+              createdIds.push(singleData.id);
               if (source.tagNames.length > 0) {
                 tagAssignments.push({
                   contactId: singleData.id,
@@ -314,6 +317,7 @@ export function ImportModal({
         } else {
           const inserted = data ?? [];
           imported += inserted.length;
+          for (const row of inserted) createdIds.push(row.id);
           // inserted[j] ↔ chunk[j] only holds because a single INSERT
           // preserves RETURNING order. If this path is ever split into
           // parallel inserts, zip by phone or returned id instead.
@@ -342,6 +346,12 @@ export function ImportModal({
       }
 
       setResult({ imported, skipped, failed, tagsAssigned });
+      for (const contactId of createdIds) {
+        void dispatchClientTrigger({
+          triggerType: 'new_contact_created',
+          contactId,
+        });
+      }
       if (imported > 0) {
         toast.success(t('toastImported', { count: imported }));
         onImported();

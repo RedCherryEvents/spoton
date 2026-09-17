@@ -74,7 +74,7 @@ export async function insertSteps(
         step_config: s.step_config ?? {},
         position: idx,
       })
-      if (s.step_type === 'condition' && s.branches) {
+      if (s.branches) {
         if (s.branches.yes) walk(s.branches.yes, id, 'yes')
         if (s.branches.no) walk(s.branches.no, id, 'no')
       }

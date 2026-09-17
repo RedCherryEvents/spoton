@@ -187,7 +187,7 @@ export interface Conversation {
 // Notifications (migration 027)
 // ============================================================
 
-export type NotificationType = 'conversation_assigned';
+export type NotificationType = 'conversation_assigned' | 'automation_notify';
 
 export interface Notification {
   id: string;
@@ -465,22 +465,41 @@ export type AutomationTriggerType =
   | 'time_based'
   /** Customer tapped a reply button / list row whose id matches; lets
    *  multi-step menus be chained across automations. */
-  | 'interactive_reply';
+  | 'interactive_reply'
+  | 'deal_created'
+  | 'deal_stage_changed'
+  | 'campaign_entry';
 
 export type AutomationStepType =
   | 'send_message'
   | 'send_buttons'
   | 'send_list'
   | 'send_template'
+  | 'send_media'
   | 'add_tag'
   | 'remove_tag'
   | 'assign_conversation'
   | 'update_contact_field'
+  | 'upsert_contact'
   | 'create_deal'
+  | 'update_deal'
   | 'wait'
+  | 'ask_question'
+  | 'capture'
+  | 'validate'
   | 'condition'
+  | 'random_split'
+  | 'go_to'
+  | 'end'
   | 'send_webhook'
-  | 'close_conversation';
+  | 'close_conversation'
+  | 'set_conversation_status'
+  | 'add_note'
+  | 'notify_agent'
+  | 'campaign_add_entry'
+  | 'campaign_set_status'
+  | 'campaign_generate_reference'
+  | 'campaign_set_field';
 
 export type AutomationLogStatus = 'success' | 'partial' | 'failed';
 
@@ -490,11 +509,11 @@ export interface KeywordMatchTriggerConfig {
    * `contains` (the default) is a raw substring test, so a short keyword
    * matches inside longer words — "k" fires on "thanks". `word` is the
    * boundary-aware alternative added for issue #409; see
-   * `matchesWholeWord` in `@/lib/automations/engine` for its exact
+   * `matchesWholeWord` in `@/lib/automations/keyword-match` for its exact
    * semantics. Flows carry their own keyword config and stay
    * substring-only (`@/lib/flows/types`).
    */
-  match_type: 'exact' | 'contains' | 'word';
+  match_type: 'exact' | 'contains' | 'word' | 'starts_with' | 'ends_with';
   case_sensitive?: boolean;
 }
 
@@ -506,6 +525,18 @@ export interface TimeBasedTriggerConfig {
   /** Cron expression or simple HH:mm string; engine can accept either. */
   schedule: string;
   timezone?: string;
+  audience?: 'none' | 'campaign' | 'tag';
+  campaign_id?: string;
+  tag_id?: string;
+}
+
+export interface DealTriggerConfig {
+  pipeline_id?: string;
+  stage_id?: string;
+}
+
+export interface CampaignEntryTriggerConfig {
+  campaign_id?: string;
 }
 
 export interface InteractiveReplyTriggerConfig {
@@ -519,6 +550,8 @@ export type AutomationTriggerConfig =
   | TagTriggerConfig
   | TimeBasedTriggerConfig
   | InteractiveReplyTriggerConfig
+  | DealTriggerConfig
+  | CampaignEntryTriggerConfig
   | Record<string, unknown>;
 
 export interface SendMessageStepConfig {
@@ -571,6 +604,93 @@ export interface CreateDealStepConfig {
 export interface WaitStepConfig {
   amount: number;
   unit: 'minutes' | 'hours' | 'days';
+  /** Optional absolute ISO timestamp; when set, used instead of amount+unit. */
+  until?: string;
+}
+
+export interface SendMediaStepConfig {
+  media_type: 'image' | 'video' | 'document' | 'audio';
+  url: string;
+  caption?: string;
+  filename?: string;
+}
+
+export interface AskQuestionStepConfig {
+  text: string;
+  var_key: string;
+  /** Timeout hours before the inbound wait expires. Defaults to 48. */
+  timeout_hours?: number;
+}
+
+export interface CaptureStepConfig {
+  var_key: string;
+  source?: 'message_text' | 'last_reply';
+}
+
+export interface ValidateStepConfig {
+  var_key: string;
+  rule: 'required' | 'email' | 'phone' | 'number' | 'regex';
+  pattern?: string;
+}
+
+export interface AddNoteStepConfig {
+  text: string;
+}
+
+export interface SetConversationStatusStepConfig {
+  status: 'open' | 'closed' | 'pending';
+}
+
+export interface NotifyAgentStepConfig {
+  agent_id?: string;
+  title: string;
+  body?: string;
+}
+
+export interface CampaignAddEntryStepConfig {
+  campaign_id: string;
+}
+
+export interface CampaignSetStatusStepConfig {
+  campaign_id?: string;
+  status: CampaignEntryStatus;
+}
+
+export interface CampaignGenerateReferenceStepConfig {
+  campaign_id?: string;
+}
+
+export interface CampaignSetFieldStepConfig {
+  campaign_id?: string;
+  field_key: string;
+  value: string;
+}
+
+export interface RandomSplitStepConfig {
+  /** Probability 0–100 of taking the Yes branch. */
+  percent: number;
+}
+
+export interface GoToStepConfig {
+  /** Builder/client node id stamped onto the target step's config. */
+  target_node_id: string;
+}
+
+export interface EndStepConfig {
+  reason?: string;
+}
+
+export interface UpdateDealStepConfig {
+  deal_id?: string;
+  stage_id?: string;
+  title?: string;
+  value?: number;
+  status?: 'open' | 'won' | 'lost';
+}
+
+export interface UpsertContactStepConfig {
+  field: string;
+  value: string;
 }
 
 export type ConditionSubject =
@@ -598,13 +718,29 @@ export type AutomationStepConfig =
   | SendButtonsStepConfig
   | SendListStepConfig
   | SendTemplateStepConfig
+  | SendMediaStepConfig
   | TagStepConfig
   | AssignConversationStepConfig
   | UpdateContactFieldStepConfig
+  | UpsertContactStepConfig
   | CreateDealStepConfig
+  | UpdateDealStepConfig
   | WaitStepConfig
+  | AskQuestionStepConfig
+  | CaptureStepConfig
+  | ValidateStepConfig
   | ConditionStepConfig
+  | RandomSplitStepConfig
+  | GoToStepConfig
+  | EndStepConfig
   | SendWebhookStepConfig
+  | SetConversationStatusStepConfig
+  | AddNoteStepConfig
+  | NotifyAgentStepConfig
+  | CampaignAddEntryStepConfig
+  | CampaignSetStatusStepConfig
+  | CampaignGenerateReferenceStepConfig
+  | CampaignSetFieldStepConfig
   | Record<string, never>
   | Record<string, unknown>;
 
@@ -657,6 +793,125 @@ export interface AutomationLog {
   error_message?: string | null;
   created_at: string;
   contact?: Contact;
+}
+
+// ============================================================
+// Campaigns (migration 040)
+// ============================================================
+
+export type CampaignStatus = 'draft' | 'active' | 'paused' | 'archived';
+export type CampaignEntryStatus =
+  | 'in_progress'
+  | 'completed'
+  | 'invalid'
+  | 'duplicate'
+  | 'disqualified'
+  | 'withdrawn'
+  | 'active';
+export type CampaignFieldType = 'text' | 'number' | 'email' | 'phone' | 'select';
+export type CampaignDuplicateRule =
+  | 'whatsapp'
+  | 'email'
+  | 'whatsapp_per_day'
+  | 'unlimited';
+
+export interface CampaignSettings {
+  duplicate_rule?: CampaignDuplicateRule;
+  client_name?: string;
+  brand_color?: string;
+  logo_url?: string;
+}
+
+export interface Campaign {
+  id: string;
+  account_id: string;
+  user_id: string;
+  name: string;
+  code: string;
+  keyword?: string | null;
+  description?: string | null;
+  status: CampaignStatus;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  settings?: CampaignSettings;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CampaignFieldDefinition {
+  id: string;
+  campaign_id: string;
+  account_id: string;
+  key: string;
+  label: string;
+  field_type: CampaignFieldType;
+  required: boolean;
+  options?: string[] | null;
+  position: number;
+}
+
+export interface CampaignAnswer {
+  label: string;
+  value?: string | null;
+}
+
+export type CampaignAnswerMap = Record<string, CampaignAnswer>;
+
+export interface CampaignEntryEvent {
+  at: string;
+  type: string;
+  label: string;
+  detail?: string;
+}
+
+export interface CampaignEntry {
+  id: string;
+  campaign_id: string;
+  account_id: string;
+  contact_id: string;
+  conversation_id?: string | null;
+  automation_id?: string | null;
+  assigned_agent_id?: string | null;
+  status: CampaignEntryStatus;
+  entry_reference?: string | null;
+  entry_number?: number | null;
+  source?: string | null;
+  answers?: CampaignAnswerMap;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+  contact?: Contact;
+  assigned_agent?: { id: string; full_name: string } | null;
+  campaign?: Pick<Campaign, 'id' | 'name' | 'code'>;
+}
+
+export interface CampaignEntryValue {
+  id: string;
+  entry_id: string;
+  field_id: string;
+  value?: string | null;
+  updated_at: string;
+}
+
+export interface CampaignReportSharePermissions {
+  summary: boolean;
+  statistics: boolean;
+  answer_breakdown: boolean;
+  entry_details: boolean;
+}
+
+export interface CampaignReportShare {
+  id: string;
+  campaign_id: string;
+  account_id: string;
+  created_by: string;
+  label?: string | null;
+  expires_at: string;
+  revoked_at?: string | null;
+  permissions: CampaignReportSharePermissions;
+  created_at: string;
+  url?: string;
 }
 
 // ============================================================

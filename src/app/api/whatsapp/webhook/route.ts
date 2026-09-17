@@ -7,7 +7,7 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
-import { runAutomationsForTrigger } from '@/lib/automations/engine'
+import { runAutomationsForTrigger, tryResumeInboundWait } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
@@ -810,12 +810,24 @@ async function processMessage(
   })
   const flowConsumed = flowResult.consumed
 
+  const inboundText = contentText ?? message.text?.body ?? ''
+  const waitConsumed = !flowConsumed
+    ? await tryResumeInboundWait({
+        accountId,
+        contactId: contactRecord.id,
+        conversationId: conversation.id,
+        messageText: inboundText,
+      }).catch((err) => {
+        console.error('[automations] inbound wait resume failed:', err)
+        return false
+      })
+    : false
+
   // Fire any automations that react to this webhook event. All dispatches
   // run here (not earlier) so the contact, conversation, and inbound
   // message all exist before any step — including send_message — runs.
   // Fire-and-forget: a slow or failing automation must not block the
   // webhook's 200 OK response to Meta.
-  const inboundText = contentText ?? message.text?.body ?? ''
   const automationTriggers: (
     | 'new_contact_created'
     | 'first_inbound_message'
@@ -823,9 +835,9 @@ async function processMessage(
     | 'keyword_match'
     | 'interactive_reply'
   )[] = []
-  // Content-level triggers are suppressed when a flow consumed the
-  // message — see the comment block above.
-  if (!flowConsumed) {
+  // Content-level triggers are suppressed when a flow or an inbound-wait
+  // consumed the message — see the comment block above.
+  if (!flowConsumed && !waitConsumed) {
     automationTriggers.push('new_message_received', 'keyword_match')
     // Interactive tap → fire the interactive_reply trigger too (only
     // meaningful when a button/list reply actually arrived). Enables
@@ -866,17 +878,25 @@ async function processMessage(
     }).catch((err) => console.error('[automations] dispatch failed:', err))
   }
 
-  // AI auto-reply. Runs only for plain-text inbound the deterministic
-  // flow runner did NOT consume (flows win over the LLM), and only when
-  // the account has enabled it. Awaited inside `after()` (same reason as
-  // the webhook dispatch below); `dispatchInboundToAiReply` owns its
+  // AI auto-reply. Runs only for plain-text inbound that neither a
+  // Flow nor an inbound-wait (Ask Question) consumed — those
+  // deterministic paths already replied or will continue the script.
+  // Button taps are also excluded: they are menu navigation, not a
+  // free-text question. Awaited inside `after()` (same reason as the
+  // webhook dispatch below); `dispatchInboundToAiReply` owns its
   // eligibility gates + try/catch and never throws.
-  if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
+  if (
+    !flowConsumed &&
+    !waitConsumed &&
+    !interactiveReplyId &&
+    inboundText.trim()
+  ) {
     await dispatchInboundToAiReply({
       accountId,
       conversationId: conversation.id,
       contactId: contactRecord.id,
       configOwnerUserId,
+      messageText: inboundText,
     })
   }
 

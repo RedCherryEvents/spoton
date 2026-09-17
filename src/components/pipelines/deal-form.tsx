@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
+import { dispatchClientTrigger } from "@/lib/automations/client-dispatch";
 
 interface DealFormProps {
   open: boolean;
@@ -180,6 +181,17 @@ export function DealForm({
         setSaving(false);
         return;
       }
+      if (stageId && stageId !== deal.stage_id) {
+        void dispatchClientTrigger({
+          triggerType: "deal_stage_changed",
+          contactId: contactId || deal.contact_id || null,
+          context: {
+            deal_id: deal.id,
+            pipeline_id: pipelineId,
+            stage_id: stageId,
+          },
+        });
+      }
     } else {
       const {
         data: { session },
@@ -195,14 +207,25 @@ export function DealForm({
         setSaving(false);
         return;
       }
-      const { error } = await supabase
+      const { data: createdDeal, error } = await supabase
         .from("deals")
-        .insert({ ...payload, user_id: user.id, account_id: accountId, status: "open" });
+        .insert({ ...payload, user_id: user.id, account_id: accountId, status: "open" })
+        .select("id")
+        .single();
       if (error) {
         toast.error(t("toastFailedCreate"));
         setSaving(false);
         return;
       }
+      void dispatchClientTrigger({
+        triggerType: "deal_created",
+        contactId: contactId || null,
+        context: {
+          deal_id: createdDeal.id,
+          pipeline_id: pipelineId,
+          stage_id: stageId,
+        },
+      });
     }
 
     setSaving(false);

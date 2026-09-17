@@ -659,6 +659,9 @@ export function WhatsAppConfig() {
                   {t('tokenHidden')}
                 </p>
               )}
+              <p className="text-xs text-muted-foreground">
+                {t('accessTokenHint')}
+              </p>
             </div>
 
             <div className="space-y-2">

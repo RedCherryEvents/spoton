@@ -27,8 +27,11 @@ import {
   sendMediaMessage,
   sendInteractiveButtons,
   sendInteractiveList,
+  isMetaAuthError,
+  META_TOKEN_REPAIR_MESSAGE,
   type MediaKind,
 } from '@/lib/whatsapp/meta-api';
+import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder';
 import {
   validateInteractivePayload,
   interactivePayloadPreviewText,
@@ -84,7 +87,7 @@ export interface SendMessageParams {
   /** Legacy positional body params (only used if messageParams.body unset). */
   templateParams?: string[];
   /** Structured template params (header/body/buttons). */
-  templateMessageParams?: unknown;
+  templateMessageParams?: SendTimeParams;
   /** Structured payload for `messageType === 'interactive'`. */
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
@@ -266,7 +269,17 @@ export async function sendMessageToConversation(
     );
   }
 
-  const accessToken = decrypt(config.access_token);
+  let accessToken: string
+  try {
+    accessToken = decrypt(config.access_token)
+  } catch (err) {
+    console.error('[send-message] access_token decrypt failed:', err)
+    throw new SendMessageError(
+      'whatsapp_auth',
+      'Stored WhatsApp token cannot be decrypted. Re-enter it in Settings → WhatsApp and Save.',
+      401,
+    )
+  }
 
   // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
   if (isLegacyFormat(config.access_token)) {
@@ -434,6 +447,9 @@ export async function sendMessageToConversation(
     const message =
       err instanceof Error ? err.message : 'Unknown Meta API error';
     console.error('[send-message] Meta send failed for all variants:', message);
+    if (isMetaAuthError(err)) {
+      throw new SendMessageError('whatsapp_auth', META_TOKEN_REPAIR_MESSAGE, 401)
+    }
     throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
   }
 

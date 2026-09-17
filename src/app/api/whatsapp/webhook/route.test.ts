@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Shared, hoisted state the module mocks close over. Reset per test.
 const h = vi.hoisted(() => ({
   runAutomationsForTrigger: vi.fn(),
+  tryResumeInboundWait: vi.fn(async () => false),
   dispatchInboundToFlows: vi.fn(),
   dispatchInboundToAiReply: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
@@ -191,6 +192,7 @@ vi.mock('@/lib/whatsapp/template-webhook', () => ({
 }))
 vi.mock('@/lib/automations/engine', () => ({
   runAutomationsForTrigger: h.runAutomationsForTrigger,
+  tryResumeInboundWait: h.tryResumeInboundWait,
 }))
 vi.mock('@/lib/flows/engine', () => ({
   dispatchInboundToFlows: h.dispatchInboundToFlows,
@@ -272,6 +274,7 @@ beforeEach(() => {
   h.dispatchInboundToFlows.mockResolvedValue({ consumed: false })
   h.dispatchInboundToAiReply.mockResolvedValue(undefined)
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
+  h.tryResumeInboundWait.mockResolvedValue(false)
   h.runAutomationsForTrigger.mockImplementation(() => {
     h.state.automationStarted++
     return new Promise<void>((resolve) => {
@@ -536,5 +539,57 @@ describe('inbound webhook: after() awaits automations (#368)', () => {
     // If the dispatches were fire-and-forget, completed would still be 0
     // here — the callback would have resolved before the timers fired.
     expect(h.state.automationCompleted).toBe(3)
+  })
+})
+
+describe('inbound webhook: flows / wait / AI precedence', () => {
+  it('passes the inbound text into AI auto-reply on a free-text message', async () => {
+    await runWebhook()
+
+    expect(h.dispatchInboundToAiReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'acc-1',
+        conversationId: 'conv-1',
+        contactId: 'contact-1',
+        messageText: 'hello',
+      }),
+    )
+  })
+
+  it('skips content automations and AI when a flow consumed the message', async () => {
+    h.dispatchInboundToFlows.mockResolvedValue({ consumed: true })
+
+    await runWebhook()
+
+    expect(h.tryResumeInboundWait).not.toHaveBeenCalled()
+    expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
+    const triggers = h.runAutomationsForTrigger.mock.calls.map(
+      (call) => (call[0] as { triggerType: string }).triggerType,
+    )
+    expect(triggers).toContain('first_inbound_message')
+    expect(triggers).not.toContain('new_message_received')
+    expect(triggers).not.toContain('keyword_match')
+  })
+
+  it('skips content automations and AI when an inbound wait consumed the message', async () => {
+    h.tryResumeInboundWait.mockResolvedValue(true)
+
+    await runWebhook()
+
+    expect(h.tryResumeInboundWait).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'acc-1',
+        contactId: 'contact-1',
+        conversationId: 'conv-1',
+        messageText: 'hello',
+      }),
+    )
+    expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
+    const triggers = h.runAutomationsForTrigger.mock.calls.map(
+      (call) => (call[0] as { triggerType: string }).triggerType,
+    )
+    expect(triggers).toContain('first_inbound_message')
+    expect(triggers).not.toContain('new_message_received')
+    expect(triggers).not.toContain('keyword_match')
   })
 })

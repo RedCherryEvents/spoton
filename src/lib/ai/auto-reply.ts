@@ -9,6 +9,11 @@ import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import {
+  runAutomationsForTrigger,
+  triggerMatches,
+} from '@/lib/automations/engine'
+import type { Automation } from '@/types'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -18,15 +23,19 @@ interface DispatchArgs {
   /** The account's WhatsApp config owner, used for the outbound send's
    *  audit columns (mirrors how the flow runner passes it through). */
   configOwnerUserId: string
+  /** Inbound body used to decide whether a keyword_match automation
+   *  would actually fire for this message. */
+  messageText?: string
 }
 
 /**
  * AI auto-reply for a freshly-arrived inbound message.
  *
  * Invoked from the WhatsApp webhook's `after()` block, only when no
- * deterministic flow consumed the message (flows win). Mirrors the flow
- * runner's contract: it owns its try/catch and NEVER throws — a failing
- * or slow LLM call must not affect the webhook's 200 to Meta.
+ * Flow and no inbound-wait consumed the message (deterministic paths
+ * win). Mirrors the flow runner's contract: it owns its try/catch and
+ * NEVER throws — a failing or slow LLM call must not affect the
+ * webhook's 200 to Meta.
  *
  * Eligibility gates (any → silent no-op):
  *   - AI off / auto-reply disabled for the account
@@ -34,6 +43,9 @@ interface DispatchArgs {
  *   - auto-reply was disabled for this conversation (prior handoff)
  *   - the per-conversation reply cap is reached
  *   - there's nothing to reply to
+ *   - an active `new_message_received` automation exists (it fires on
+ *     every inbound and would double-text)
+ *   - an active `keyword_match` automation matches THIS message
  *
  * The 24h WhatsApp session window is inherently open here — we're
  * reacting to a customer message that just landed — so no separate
@@ -42,7 +54,13 @@ interface DispatchArgs {
 export async function dispatchInboundToAiReply(
   args: DispatchArgs,
 ): Promise<void> {
-  const { accountId, conversationId, contactId, configOwnerUserId } = args
+  const {
+    accountId,
+    conversationId,
+    contactId,
+    configOwnerUserId,
+    messageText,
+  } = args
 
   try {
     const db = supabaseAdmin()
@@ -51,21 +69,28 @@ export async function dispatchInboundToAiReply(
     if (!config || !config.autoReplyEnabled) return
 
     // Deterministic, user-configured responders win over the LLM — the
-    // caller already excludes messages a Flow consumed. Message-level
-    // automations (`new_message_received` / `keyword_match`) are
-    // dispatched independently for this same inbound and may send their
-    // own reply, so if the account has any active one we stand down to
-    // avoid double-texting the customer. (Relationship triggers like
-    // `first_inbound_message` don't count — they're not per-message
-    // auto-responders.)
+    // caller already excludes messages a Flow or inbound-wait consumed.
+    // `new_message_received` fires on every inbound, so any active one
+    // would double-text. `keyword_match` only stands us down when THIS
+    // message would actually match — a STOP keyword must not disable
+    // AI for every other conversation.
     const { data: autoResponders } = await db
       .from('automations')
-      .select('id')
+      .select('id, trigger_type, trigger_config')
       .eq('account_id', accountId)
       .eq('is_active', true)
       .in('trigger_type', ['new_message_received', 'keyword_match'])
-      .limit(1)
-    if (autoResponders && autoResponders.length > 0) return
+    if (
+      (autoResponders ?? []).some((row) =>
+        row.trigger_type === 'new_message_received'
+          ? true
+          : triggerMatches(row as Automation, {
+              message_text: messageText ?? '',
+            }),
+      )
+    ) {
+      return
+    }
 
     const { data: conv, error: convErr } = await db
       .from('conversations')
@@ -154,6 +179,17 @@ export async function dispatchInboundToAiReply(
         update.assigned_agent_id = config.handoffAgentId
       }
       await db.from('conversations').update(update).eq('id', conversationId)
+      if (config.handoffAgentId && !conv.assigned_agent_id) {
+        await runAutomationsForTrigger({
+          accountId,
+          triggerType: 'conversation_assigned',
+          contactId,
+          context: {
+            agent_id: config.handoffAgentId,
+            conversation_id: conversationId,
+          },
+        })
+      }
       return
     }
 

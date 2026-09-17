@@ -27,6 +27,8 @@ import { useTranslations } from "next-intl";
 export interface TemplateSendValues {
   body: string[];
   headerText?: string;
+  /** Public HTTPS link for IMAGE/VIDEO/DOCUMENT headers. Required at send time. */
+  headerMediaUrl?: string;
   buttonParams?: Record<number, string>;
 }
 
@@ -50,14 +52,30 @@ interface UrlButtonSlot {
   url: string;
 }
 
+type MediaHeaderType = "image" | "video" | "document";
+
+function isMediaHeaderType(value: unknown): value is MediaHeaderType {
+  return value === "image" || value === "video" || value === "document";
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Templates may need values for: body variables, a text-header
- * variable, and per-URL-button suffixes. Collect them all so the
- * send-message path doesn't 400 on missing parameters.
+ * variable, a media-header URL, and per-URL-button suffixes. Collect
+ * them all so the send-message path doesn't 400 on missing parameters.
  */
 function collectVariableSlots(template: MessageTemplate): {
   bodyVars: number[];
   headerVarCount: number;
+  mediaHeaderType: MediaHeaderType | null;
   urlButtonSlots: UrlButtonSlot[];
 } {
   const bodyVars = extractVariableIndices(template.body_text);
@@ -65,13 +83,16 @@ function collectVariableSlots(template: MessageTemplate): {
     template.header_type === "text" && template.header_content
       ? extractVariableIndices(template.header_content).length
       : 0;
+  const mediaHeaderType = isMediaHeaderType(template.header_type)
+    ? template.header_type
+    : null;
   const urlButtonSlots: UrlButtonSlot[] = [];
   (template.buttons ?? []).forEach((b, i) => {
     if (b.type === "URL" && extractVariableIndices(b.url).length > 0) {
       urlButtonSlots.push({ index: i, text: b.text, url: b.url });
     }
   });
-  return { bodyVars, headerVarCount, urlButtonSlots };
+  return { bodyVars, headerVarCount, mediaHeaderType, urlButtonSlots };
 }
 
 export function TemplatePicker({
@@ -86,6 +107,7 @@ export function TemplatePicker({
   const [selected, setSelected] = useState<MessageTemplate | null>(null);
   const [params, setParams] = useState<string[]>([]);
   const [headerText, setHeaderText] = useState<string>("");
+  const [headerMediaUrl, setHeaderMediaUrl] = useState<string>("");
   const [buttonParams, setButtonParams] = useState<Record<number, string>>({});
 
   useEffect(() => {
@@ -136,6 +158,7 @@ export function TemplatePicker({
     setSelected(null);
     setParams([]);
     setHeaderText("");
+    setHeaderMediaUrl("");
     setButtonParams({});
   }
 
@@ -146,18 +169,29 @@ export function TemplatePicker({
 
   function pickTemplate(template: MessageTemplate) {
     const slots = collectVariableSlots(template);
+    const storedHeaderMedia = template.header_media_url?.trim() ?? "";
+    // IMAGE/VIDEO/DOCUMENT headers need a public URL at send time.
+    // Synced-from-Meta templates often have header_type but no stored
+    // URL (Meta returns a creation-time handle, not a reusable link).
+    const needsMediaUrlInput =
+      !!slots.mediaHeaderType && !isValidHttpUrl(storedHeaderMedia);
     const noInputsNeeded =
       slots.bodyVars.length === 0 &&
       slots.headerVarCount === 0 &&
-      slots.urlButtonSlots.length === 0;
+      slots.urlButtonSlots.length === 0 &&
+      !needsMediaUrlInput;
     if (noInputsNeeded) {
-      onSelect(template, { body: [] });
+      onSelect(template, {
+        body: [],
+        headerMediaUrl: storedHeaderMedia || undefined,
+      });
       handleOpenChange(false);
       return;
     }
     setSelected(template);
     setParams(new Array(slots.bodyVars.length).fill(""));
     setHeaderText("");
+    setHeaderMediaUrl(storedHeaderMedia);
     setButtonParams({});
   }
 
@@ -165,6 +199,7 @@ export function TemplatePicker({
     if (!selected) return;
     const values: TemplateSendValues = { body: params };
     if (headerText.trim()) values.headerText = headerText.trim();
+    if (headerMediaUrl.trim()) values.headerMediaUrl = headerMediaUrl.trim();
     if (Object.keys(buttonParams).length > 0) {
       values.buttonParams = Object.fromEntries(
         Object.entries(buttonParams).map(([k, v]) => [Number(k), v.trim()]),
@@ -178,11 +213,15 @@ export function TemplatePicker({
     () => (selected ? collectVariableSlots(selected) : null),
     [selected],
   );
+  const headerMediaValid = !slots?.mediaHeaderType
+    ? true
+    : isValidHttpUrl(headerMediaUrl.trim());
   const canConfirm =
     !!selected &&
     !!slots &&
     slots.bodyVars.every((_, i) => (params[i] ?? "").trim().length > 0) &&
     (slots.headerVarCount === 0 || headerText.trim().length > 0) &&
+    headerMediaValid &&
     slots.urlButtonSlots.every(
       (s) => (buttonParams[s.index] ?? "").trim().length > 0,
     );
@@ -272,6 +311,36 @@ export function TemplatePicker({
                   placeholder={t("headerValuePlaceholder")}
                   className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
                 />
+              </div>
+            )}
+            {slots?.mediaHeaderType && (
+              <div className="space-y-1">
+                <Label className="text-xs text-popover-foreground">
+                  {t("headerMediaLabel", { type: slots.mediaHeaderType })}
+                </Label>
+                <Input
+                  type="url"
+                  value={headerMediaUrl}
+                  onChange={(e) => setHeaderMediaUrl(e.target.value)}
+                  placeholder={t("headerMediaPlaceholder")}
+                  className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  {t("headerMediaHint")}
+                </p>
+                {headerMediaUrl.trim() && !headerMediaValid && (
+                  <p className="text-[10px] text-amber-300">
+                    {t("headerMediaInvalid")}
+                  </p>
+                )}
+                {slots.mediaHeaderType === "image" && headerMediaValid && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={headerMediaUrl.trim()}
+                    alt=""
+                    className="mt-1 max-h-32 rounded-md border border-border object-contain"
+                  />
+                )}
               </div>
             )}
             {slots?.bodyVars.map((v, i) => (

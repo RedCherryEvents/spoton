@@ -24,18 +24,81 @@ export interface MetaPhoneInfo {
 }
 
 interface MetaErrorResponse {
-  error?: { message?: string; code?: number; type?: string }
+  error?: {
+    message?: string
+    code?: number
+    type?: string
+    error_subcode?: number
+    error_user_msg?: string
+    error_data?: { details?: string }
+  }
+}
+
+export class MetaApiError extends Error {
+  readonly httpStatus: number
+  readonly code: number | null
+  readonly subcode: number | null
+  readonly type: string | null
+
+  constructor(args: {
+    message: string
+    httpStatus: number
+    code?: number | null
+    subcode?: number | null
+    type?: string | null
+  }) {
+    super(args.message)
+    this.name = 'MetaApiError'
+    this.httpStatus = args.httpStatus
+    this.code = args.code ?? null
+    this.subcode = args.subcode ?? null
+    this.type = args.type ?? null
+  }
+}
+
+/** Shown in the inbox when Meta rejects the stored Cloud API token. */
+export const META_TOKEN_REPAIR_MESSAGE =
+  'WhatsApp access token is invalid or expired. Open Settings → WhatsApp, paste a System User token with whatsapp_business_messaging, and Save. Temporary tokens from Meta’s API Setup page expire in under 24 hours.'
+
+export function isMetaAuthError(err: unknown): boolean {
+  if (err instanceof MetaApiError) {
+    if (err.code === 190 || err.code === 102 || err.code === 104) return true
+    if (err.httpStatus === 401) return true
+    if (err.code === 0 && /authenticat/i.test(err.message)) return true
+  }
+  const message = err instanceof Error ? err.message : String(err)
+  return /authentication error|error validating access token|invalid oauth access token|session has expired|access token has expired/i.test(
+    message,
+  )
+}
+
+export function formatMetaError(data: MetaErrorResponse, fallback: string): string {
+  const err = data.error
+  if (!err) return fallback
+  const base = err.message?.trim() || fallback
+  const extra = err.error_data?.details?.trim() || err.error_user_msg?.trim()
+  const parts = extra && !base.includes(extra) ? `${base} — ${extra}` : base
+  if (typeof err.code === 'number') {
+    const code = err.error_subcode ? `#${err.code}/${err.error_subcode}` : `#${err.code}`
+    return `${parts} (${code})`
+  }
+  return parts
 }
 
 async function throwMetaError(response: Response, fallback: string): Promise<never> {
-  let message = fallback
+  let data: MetaErrorResponse = {}
   try {
-    const data = (await response.json()) as MetaErrorResponse
-    if (data.error?.message) message = data.error.message
+    data = (await response.json()) as MetaErrorResponse
   } catch {
     // response body wasn't JSON — keep the fallback
   }
-  throw new Error(message)
+  throw new MetaApiError({
+    message: formatMetaError(data, fallback),
+    httpStatus: response.status,
+    code: data.error?.code ?? null,
+    subcode: data.error?.error_subcode ?? null,
+    type: data.error?.type ?? null,
+  })
 }
 
 // ============================================================
@@ -727,6 +790,9 @@ export const INTERACTIVE_LIMITS = {
   maxListRowsTotal: 10,
   listRowTitleMaxLength: 24,
   listRowDescriptionMaxLength: 72,
+  /** Meta requires a title when the list has more than one section. */
+  listSectionTitleMaxLength: 24,
+  listRowIdMaxLength: 200,
   bodyMaxLength: 1024,
   footerMaxLength: 60,
   headerTextMaxLength: 60,
@@ -897,10 +963,53 @@ export async function sendInteractiveList(
       `Interactive list requires 1-${INTERACTIVE_LIMITS.maxListRowsTotal} rows total across all sections (got ${totalRows}).`
     )
   }
+  const cleanedSections = sections
+    .map((s) => ({
+      title: s.title?.trim() || undefined,
+      rows: s.rows
+        .map((r) => ({
+          id: (r.id ?? '').trim(),
+          title: (r.title ?? '').trim(),
+          description: r.description?.trim() || undefined,
+        }))
+        .filter((r) => r.id && r.title),
+    }))
+    .filter((s) => s.rows.length > 0)
+
+  if (cleanedSections.length < 1) {
+    throw new Error(
+      `Interactive list requires 1-${INTERACTIVE_LIMITS.maxListSections} sections (got ${cleanedSections.length}).`,
+    )
+  }
+  if (cleanedSections.length > 1) {
+    for (const section of cleanedSections) {
+      if (!section.title) {
+        throw new Error(
+          'Interactive list requires a title on every section when there is more than one.',
+        )
+      }
+    }
+  }
+  for (const section of cleanedSections) {
+    if (
+      section.title &&
+      section.title.length > INTERACTIVE_LIMITS.listSectionTitleMaxLength
+    ) {
+      throw new Error(
+        `Interactive list section title exceeds ${INTERACTIVE_LIMITS.listSectionTitleMaxLength} chars.`,
+      )
+    }
+  }
+
   const seenIds = new Set<string>()
-  for (const section of sections) {
+  for (const section of cleanedSections) {
     for (const row of section.rows) {
       if (!row.id) throw new Error('Interactive list row missing id.')
+      if (row.id.length > INTERACTIVE_LIMITS.listRowIdMaxLength) {
+        throw new Error(
+          `Interactive list row id exceeds ${INTERACTIVE_LIMITS.listRowIdMaxLength} chars.`,
+        )
+      }
       if (seenIds.has(row.id)) {
         throw new Error(`Interactive list has duplicate row id "${row.id}".`)
       }
@@ -926,8 +1035,8 @@ export async function sendInteractiveList(
     type: 'list',
     body: { text: bodyText },
     action: {
-      button: buttonLabel,
-      sections: sections.map((s) => ({
+      button: buttonLabel.trim(),
+      sections: cleanedSections.map((s) => ({
         ...(s.title ? { title: s.title } : {}),
         rows: s.rows.map((r) => ({
           id: r.id,

@@ -30,6 +30,7 @@ import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useTranslations } from "next-intl";
+import { dispatchClientTrigger } from "@/lib/automations/client-dispatch";
 
 // Pipeline creation is admin-class (settings-tier write under
 // the new RLS); deal creation is operational and only requires
@@ -227,9 +228,20 @@ export default function PipelinesPage() {
       if (error) {
         toast.error(t("toastFailedMoveDeal"));
         refreshDeals();
+      } else {
+        const moved = deals.find((d) => d.id === dealId);
+        void dispatchClientTrigger({
+          triggerType: "deal_stage_changed",
+          contactId: moved?.contact_id ?? null,
+          context: {
+            deal_id: dealId,
+            pipeline_id: selectedPipelineId,
+            stage_id: newStageId,
+          },
+        });
       }
     },
-    [supabase, refreshDeals, t],
+    [supabase, refreshDeals, t, deals, selectedPipelineId],
   );
 
   const handleAddDeal = useCallback(

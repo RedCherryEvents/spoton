@@ -25,11 +25,9 @@
  *   - Canvas-view UI state (selected node id, side-sheet open) —
  *     those are canvas-only and stay in `flow-canvas.tsx`.
  *
- * `removeNode` does NOT auto-clean inbound edges. The list-view's
- * NodeKeySelect dropdowns and the validator both surface dangling
- * `next_node_key` references; that visibility is enough for v1. PR 2b
- * (canvas delete via keyboard) will revisit if the canvas adds an
- * implicit-delete affordance that's easier to trip accidentally.
+ * `removeNode` clears inbound edges via `unlinkNodeReferences` so
+ * canvas / list deletes don't leave dangling arrows that the
+ * validator would flag.
  */
 
 import {
@@ -104,7 +102,7 @@ export interface FlowEditorContextValue {
   removeNode: (key: string) => void;
 
   // Actions
-  save: () => Promise<void>;
+  save: (opts?: { silent?: boolean }) => Promise<boolean>;
   setStatus: (status: BuilderState["status"]) => Promise<void>;
   deleteFlow: () => Promise<void>;
 
@@ -329,34 +327,52 @@ export function FlowEditorProvider({
   );
 
   // ---- Save (PUT) ----
-  const save = useCallback(async () => {
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/flows/${initialFlow.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: state.name,
-          description: state.description || null,
-          trigger_type: state.trigger_type,
-          trigger_config: state.trigger_config,
-          entry_node_id: state.entry_node_id,
-          nodes: state.nodes,
-        }),
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error ?? `Save failed: ${res.status}`);
+  const save = useCallback(
+    async (opts?: { silent?: boolean }): Promise<boolean> => {
+      setSaving(true);
+      try {
+        const res = await fetch(`/api/flows/${initialFlow.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: state.name,
+            description: state.description || null,
+            trigger_type: state.trigger_type,
+            trigger_config: state.trigger_config,
+            entry_node_id: state.entry_node_id,
+            nodes: state.nodes,
+          }),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error ?? t("saveFailed"));
+        }
+        setDirty(false);
+        if (!opts?.silent) toast.success(t("saved"));
+        return true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : t("saveFailed");
+        toast.error(msg);
+        return false;
+      } finally {
+        setSaving(false);
       }
-      setDirty(false);
-      toast.success(t("saved"));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Save failed";
-      toast.error(msg);
-    } finally {
-      setSaving(false);
-    }
-  }, [initialFlow.id, state]);
+    },
+    [initialFlow.id, state, t],
+  );
+
+  // Cmd/Ctrl+S saves from either view so canvas users don't have to
+  // hunt for the toolbar button. preventDefault stops the browser's
+  // "Save page" dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "s") return;
+      e.preventDefault();
+      if (!saving) void save();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [save, saving]);
 
   // ---- Activate / Pause / Archive ----
   const setStatus = useCallback(
@@ -369,9 +385,11 @@ export function FlowEditorProvider({
       try {
         // Always save first so the activation validator sees the
         // latest state — the user shouldn't have to remember "save
-        // then activate".
+        // then activate". Bail if the save failed so we don't
+        // activate a stale graph.
         if (next === "active") {
-          await save();
+          const ok = await save({ silent: true });
+          if (!ok) return;
         }
         const res = await fetch(`/api/flows/${initialFlow.id}/activate`, {
           method: "POST",
@@ -380,7 +398,7 @@ export function FlowEditorProvider({
         });
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
-          throw new Error(json.error ?? `Status update failed: ${res.status}`);
+          throw new Error(json.error ?? t("statusUpdateFailed"));
         }
         setStateRaw((s) => ({ ...s, status: next }));
         toast.success(
@@ -388,35 +406,35 @@ export function FlowEditorProvider({
             ? t("statusActivated")
             : next === "archived"
               ? t("statusArchived")
-              : t("statusDraft")
+              : t("statusDraft"),
         );
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Status update failed";
+        const msg =
+          err instanceof Error ? err.message : t("statusUpdateFailed");
         toast.error(msg);
       } finally {
         setActivating(false);
       }
     },
-    [canActivate, save, initialFlow.id],
+    [canActivate, save, initialFlow.id, t],
   );
 
   // ---- Delete ----
+  // Confirmation lives in the header dialog so this stays a pure
+  // destructive call. Callers must confirm first.
   const deleteFlow = useCallback(async () => {
-    const yes = window.confirm(
-      `Delete "${state.name}"? Any active runs end immediately. This can't be undone.`,
-    );
-    if (!yes) return;
     try {
       const res = await fetch(`/api/flows/${initialFlow.id}`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+      if (!res.ok) throw new Error(t("deleteFailed"));
+      toast.success(t("deleted"));
       router.push("/flows");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Delete failed";
+      const msg = err instanceof Error ? err.message : t("deleteFailed");
       toast.error(msg);
     }
-  }, [initialFlow.id, router, state.name]);
+  }, [initialFlow.id, router, t]);
 
   // ---- Node mutations ----
   const updateNode = useCallback(

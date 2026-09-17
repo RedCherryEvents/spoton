@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  Fragment,
   useContext,
   useEffect,
   useState,
@@ -33,6 +34,18 @@ import {
   ArrowUp,
   MousePointerClick,
   List,
+  Image,
+  HelpCircle,
+  ClipboardList,
+  ShieldCheck,
+  StickyNote,
+  Bell,
+  Megaphone,
+  Hash,
+  Split,
+  CornerDownRight,
+  Flag,
+  Copy,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -42,13 +55,17 @@ import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import type {
   AccountMember,
   AutomationStepType,
   AutomationTriggerType,
+  Campaign,
   CustomField,
   InteractiveMessagePayload,
   KeywordMatchTriggerConfig,
@@ -71,6 +88,7 @@ import {
   type ParentScope,
   type StepPath,
 } from "@/lib/automations/builder-tree"
+import { keywordTextMatches } from "@/lib/automations/keyword-match"
 import { cn } from "@/lib/utils"
 
 // ------------------------------------------------------------
@@ -107,46 +125,97 @@ interface StepMeta {
 }
 
 const STEP_META: Record<AutomationStepType, StepMeta> = {
-  send_message: { label: "send_message", icon: MessageSquare, border: "border-l-primary" },
-  send_buttons: { label: "send_buttons", icon: MousePointerClick, border: "border-l-primary" },
-  send_list: { label: "send_list", icon: List, border: "border-l-primary" },
-  send_template: { label: "send_template", icon: FileText, border: "border-l-primary" },
+  send_message: { label: "send_message", icon: MessageSquare, border: "border-l-sky-500" },
+  send_buttons: { label: "send_buttons", icon: MousePointerClick, border: "border-l-sky-500" },
+  send_list: { label: "send_list", icon: List, border: "border-l-sky-500" },
+  send_template: { label: "send_template", icon: FileText, border: "border-l-sky-500" },
+  send_media: { label: "send_media", icon: Image, border: "border-l-sky-500" },
+  ask_question: { label: "ask_question", icon: HelpCircle, border: "border-l-sky-500" },
+  capture: { label: "capture", icon: ClipboardList, border: "border-l-amber-500" },
+  validate: { label: "validate", icon: ShieldCheck, border: "border-l-amber-500" },
   add_tag: { label: "add_tag", icon: Tag, border: "border-l-primary" },
   remove_tag: { label: "remove_tag", icon: TagIcon, border: "border-l-primary" },
   assign_conversation: { label: "assign_conversation", icon: UserCheck, border: "border-l-primary" },
   update_contact_field: { label: "update_contact_field", icon: PencilLine, border: "border-l-primary" },
-  create_deal: { label: "create_deal", icon: Briefcase, border: "border-l-primary" },
+  upsert_contact: { label: "upsert_contact", icon: PencilLine, border: "border-l-primary" },
+  add_note: { label: "add_note", icon: StickyNote, border: "border-l-primary" },
+  set_conversation_status: { label: "set_conversation_status", icon: Flag, border: "border-l-primary" },
+  notify_agent: { label: "notify_agent", icon: Bell, border: "border-l-primary" },
+  create_deal: { label: "create_deal", icon: Briefcase, border: "border-l-emerald-500" },
+  update_deal: { label: "update_deal", icon: Briefcase, border: "border-l-emerald-500" },
   wait: { label: "wait", icon: Hourglass, border: "border-l-border" },
   condition: { label: "condition", icon: GitBranch, border: "border-l-amber-500" },
+  random_split: { label: "random_split", icon: Split, border: "border-l-amber-500" },
+  go_to: { label: "go_to", icon: CornerDownRight, border: "border-l-amber-500" },
+  end: { label: "end", icon: CircleSlash, border: "border-l-rose-500" },
   send_webhook: { label: "send_webhook", icon: Webhook, border: "border-l-primary" },
   close_conversation: { label: "close_conversation", icon: CircleSlash, border: "border-l-primary" },
+  campaign_add_entry: { label: "campaign_add_entry", icon: Megaphone, border: "border-l-violet-500" },
+  campaign_set_status: { label: "campaign_set_status", icon: Flag, border: "border-l-violet-500" },
+  campaign_generate_reference: { label: "campaign_generate_reference", icon: Hash, border: "border-l-violet-500" },
+  campaign_set_field: { label: "campaign_set_field", icon: PencilLine, border: "border-l-violet-500" },
 }
 
-const ADDABLE_STEPS: AutomationStepType[] = [
-  "send_message",
-  "send_buttons",
-  "send_list",
-  "send_template",
-  "add_tag",
-  "remove_tag",
-  "assign_conversation",
-  "update_contact_field",
-  "create_deal",
-  "wait",
-  "condition",
-  "send_webhook",
-  "close_conversation",
+const BRANCHING_STEPS = new Set<AutomationStepType>(["condition", "random_split"])
+
+const ADDABLE_GROUPS: { category: string; types: AutomationStepType[] }[] = [
+  {
+    category: "messages",
+    types: ["send_message", "send_buttons", "send_list", "send_template", "send_media", "ask_question"],
+  },
+  {
+    category: "data",
+    types: ["capture", "validate"],
+  },
+  {
+    category: "crm",
+    types: [
+      "add_tag",
+      "remove_tag",
+      "assign_conversation",
+      "update_contact_field",
+      "upsert_contact",
+      "add_note",
+      "set_conversation_status",
+      "notify_agent",
+      "close_conversation",
+    ],
+  },
+  {
+    category: "deals",
+    types: ["create_deal", "update_deal"],
+  },
+  {
+    category: "campaigns",
+    types: [
+      "campaign_add_entry",
+      "campaign_set_status",
+      "campaign_generate_reference",
+      "campaign_set_field",
+    ],
+  },
+  {
+    category: "flow",
+    types: ["wait", "condition", "random_split", "go_to", "end"],
+  },
+  {
+    category: "integrations",
+    types: ["send_webhook"],
+  },
 ]
 
 const TRIGGER_OPTIONS: { value: AutomationTriggerType }[] = [
   { value: "new_message_received" },
-  { value: "first_inbound_message" },
   { value: "keyword_match" },
-  { value: "interactive_reply" },
+  { value: "first_inbound_message" },
   { value: "new_contact_created" },
-  { value: "conversation_assigned" },
   { value: "tag_added" },
+  { value: "conversation_assigned" },
+  { value: "interactive_reply" },
   { value: "time_based" },
+  { value: "deal_created" },
+  { value: "deal_stage_changed" },
+  { value: "campaign_entry" },
 ]
 
 function cid(): string {
@@ -197,6 +266,37 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return { url: "", headers: {}, body_template: "" }
     case "close_conversation":
       return {}
+    case "send_media":
+      return { media_type: "image", url: "", caption: "" }
+    case "ask_question":
+      return { text: "", var_key: "answer", timeout_hours: 48 }
+    case "capture":
+      return { var_key: "answer", source: "message_text" }
+    case "validate":
+      return { var_key: "answer", rule: "required" }
+    case "add_note":
+      return { text: "" }
+    case "set_conversation_status":
+      return { status: "open" }
+    case "notify_agent":
+      return { title: "", body: "" }
+    case "campaign_add_entry":
+    case "campaign_generate_reference":
+      return { campaign_id: "" }
+    case "campaign_set_status":
+      return { campaign_id: "", status: "in_progress" }
+    case "campaign_set_field":
+      return { campaign_id: "", field_key: "", value: "" }
+    case "random_split":
+      return { percent: 50 }
+    case "go_to":
+      return { target_node_id: "" }
+    case "end":
+      return { reason: "" }
+    case "update_deal":
+      return { stage_id: "", title: "", value: 0 }
+    case "upsert_contact":
+      return { field: "name", value: "" }
     default:
       return {}
   }
@@ -219,6 +319,7 @@ interface AutomationResources {
   customFields: CustomField[]
   pipelines: PipelineOption[]
   stages: PipelineStageOption[]
+  campaigns: Campaign[]
 }
 
 interface PipelineOption {
@@ -240,6 +341,7 @@ const ResourcesContext = createContext<AutomationResources>({
   customFields: [],
   pipelines: [],
   stages: [],
+  campaigns: [],
 })
 
 function useResources(): AutomationResources {
@@ -253,6 +355,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
   const [customFields, setCustomFields] = useState<CustomField[]>([])
   const [pipelines, setPipelines] = useState<PipelineOption[]>([])
   const [stages, setStages] = useState<PipelineStageOption[]>([])
+  const [campaigns, setCampaigns] = useState<Campaign[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -263,7 +366,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
     // actually be sent (anything else 400s at send time), matching the
     // broadcast picker.
     void (async () => {
-      const [tagsRes, templatesRes, customFieldsRes, pipelinesRes, stagesRes] =
+      const [tagsRes, templatesRes, customFieldsRes, pipelinesRes, stagesRes, campaignsRes] =
         await Promise.all([
           supabase.from("tags").select("*").order("name"),
           supabase
@@ -277,6 +380,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
             .from("pipeline_stages")
             .select("id, name, pipeline_id, position")
             .order("position"),
+          supabase.from("campaigns").select("id, name, code, status").order("name"),
         ])
       if (cancelled) return
       setTags((tagsRes.data as TagRecord[] | null) ?? [])
@@ -284,6 +388,11 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
       setCustomFields((customFieldsRes.data as CustomField[] | null) ?? [])
       setPipelines((pipelinesRes.data as PipelineOption[] | null) ?? [])
       setStages((stagesRes.data as PipelineStageOption[] | null) ?? [])
+      // Missing campaigns table (migration 040 not applied) must not
+      // break the rest of the builder pickers.
+      setCampaigns(
+        campaignsRes.error ? [] : ((campaignsRes.data as Campaign[] | null) ?? []),
+      )
     })()
 
     // Members go through the API so we inherit its email-visibility
@@ -307,7 +416,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
 
   return (
     <ResourcesContext.Provider
-      value={{ tags, members, templates, customFields, pipelines, stages }}
+      value={{ tags, members, templates, customFields, pipelines, stages, campaigns }}
     >
       {children}
     </ResourcesContext.Provider>
@@ -365,6 +474,153 @@ function TagSelect({
         )}
       </select>
     </div>
+  )
+}
+
+function CampaignSelect({
+  value,
+  onChange,
+  t,
+  allowEmpty,
+}: {
+  value: string
+  onChange: (v: string) => void
+  t: ReturnType<typeof useTranslations>
+  allowEmpty?: boolean
+}) {
+  const { campaigns } = useResources()
+  if (campaigns.length === 0) {
+    return (
+      <Input
+        placeholder={t("campaigns.placeholder")}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-muted text-foreground"
+      />
+    )
+  }
+  const selected = campaigns.find((c) => c.id === value)
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={SELECT_CLASS}
+    >
+      <option value="">{allowEmpty ? t("campaigns.any") : t("campaigns.select")}</option>
+      {campaigns.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name} ({c.code})
+        </option>
+      ))}
+      {value && !selected && (
+        <option value={value}>{t("campaigns.unknown", { id: value })}</option>
+      )}
+    </select>
+  )
+}
+
+function VariableHints({
+  onInsert,
+}: {
+  onInsert: (token: string) => void
+}) {
+  const t = useTranslations("Automations.builder")
+  const tokens = [
+    "{{ message.text }}",
+    "{{ contact.name }}",
+    "{{ contact.phone }}",
+    "{{ entry.reference }}",
+    "{{ campaign.code }}",
+    "{{ vars.answer }}",
+  ]
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {tokens.map((token) => (
+        <button
+          key={token}
+          type="button"
+          className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:bg-muted"
+          onClick={() => onInsert(token)}
+        >
+          {token}
+        </button>
+      ))}
+      <span className="sr-only">{t("variables.hint")}</span>
+    </div>
+  )
+}
+
+function TimeBasedConfig({
+  config,
+  onChange,
+  t,
+}: {
+  config: Record<string, unknown>
+  onChange: (c: Record<string, unknown>) => void
+  t: ReturnType<typeof useTranslations>
+}) {
+  return (
+    <div className="space-y-2">
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+          {t("schedule")}
+        </label>
+        <Input
+          placeholder="Cron expression or HH:mm"
+          value={(config.schedule as string) ?? ""}
+          onChange={(e) => onChange({ ...config, schedule: e.target.value })}
+          className="bg-muted text-foreground"
+        />
+        <p className="mt-1 text-[11px] text-muted-foreground">{t("scheduleHint")}</p>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+          {t("audience")}
+        </label>
+        <select
+          value={(config.audience as string) ?? "none"}
+          onChange={(e) => onChange({ ...config, audience: e.target.value })}
+          className={SELECT_CLASS}
+        >
+          <option value="none">{t("audienceNone")}</option>
+          <option value="campaign">{t("audienceCampaign")}</option>
+          <option value="tag">{t("audienceTag")}</option>
+        </select>
+      </div>
+      {config.audience === "campaign" && (
+        <CampaignSelect
+          value={(config.campaign_id as string) ?? ""}
+          onChange={(v) => onChange({ ...config, campaign_id: v })}
+          t={t}
+        />
+      )}
+      {config.audience === "tag" && (
+        <TagSelect
+          value={(config.tag_id as string) ?? ""}
+          onChange={(v) => onChange({ ...config, tag_id: v })}
+          t={t}
+        />
+      )}
+    </div>
+  )
+}
+
+function DealTriggerConfigFields({
+  config,
+  onChange,
+  t,
+}: {
+  config: Record<string, unknown>
+  onChange: (c: Record<string, unknown>) => void
+  t: ReturnType<typeof useTranslations>
+}) {
+  return (
+    <DealPipelineFields
+      pipelineId={(config.pipeline_id as string) ?? ""}
+      stageId={(config.stage_id as string) ?? ""}
+      onChange={(patch) => onChange({ ...config, ...patch })}
+      t={t}
+    />
   )
 }
 
@@ -651,11 +907,12 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
   }
 
   function addStepAt(parent: ParentScope, index: number, type: AutomationStepType) {
+    const id = cid()
     const node: BuilderStep = {
-      cid: cid(),
+      cid: id,
       step_type: type,
-      step_config: blankConfig(type),
-      branches: type === "condition" ? { yes: [], no: [] } : undefined,
+      step_config: { ...blankConfig(type), node_id: id },
+      branches: BRANCHING_STEPS.has(type) ? { yes: [], no: [] } : undefined,
     }
     setState((s) => ({ ...s, steps: insertAt(s.steps, parent, index, node) }))
     setExpandedId(node.cid)
@@ -663,6 +920,55 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
 
   function deleteStepAt(path: StepPath) {
     setState((s) => ({ ...s, steps: removeAt(s.steps, path) }))
+  }
+
+  function duplicateStepAt(path: StepPath) {
+    setState((s) => {
+      const cloneWithNewIds = (step: BuilderStep): BuilderStep => {
+        const id = cid()
+        return {
+          ...step,
+          cid: id,
+          step_config: { ...step.step_config, node_id: id },
+          branches: step.branches
+            ? {
+                yes: step.branches.yes.map(cloneWithNewIds),
+                no: step.branches.no.map(cloneWithNewIds),
+              }
+            : undefined,
+        }
+      }
+      const clonedRef: { node?: BuilderStep } = {}
+      mapAtPath(s.steps, path, (step) => {
+        clonedRef.node = cloneWithNewIds(step)
+        return step
+      })
+      if (!clonedRef.node) return s
+      const last = path[path.length - 1]
+      if (!last) return s
+      if (path.length === 1) {
+        return {
+          ...s,
+          steps: insertAt(s.steps, { kind: "root" }, last.index + 1, clonedRef.node),
+        }
+      }
+      const parentPath = path.slice(0, -1)
+      let parentCid = ""
+      mapAtPath(s.steps, parentPath, (step) => {
+        parentCid = step.cid
+        return step
+      })
+      if (!parentCid || last.kind !== "branch") return s
+      return {
+        ...s,
+        steps: insertAt(
+          s.steps,
+          { kind: "branch", parentCid, branch: last.branch },
+          last.index + 1,
+          clonedRef.node,
+        ),
+      }
+    })
   }
 
   function moveStepAt(path: StepPath, direction: -1 | 1) {
@@ -777,6 +1083,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
               updateStep={updateStep}
               addStepAt={addStepAt}
               deleteStepAt={deleteStepAt}
+              duplicateStepAt={duplicateStepAt}
               moveStepAt={moveStepAt}
             />
           </ResourcesProvider>
@@ -871,21 +1178,34 @@ function TriggerCard({
               </div>
             )}
             {type === "time_based" && (
+              <TimeBasedConfig config={config} onChange={onConfigChange} t={t} />
+            )}
+            {(type === "deal_created" || type === "deal_stage_changed") && (
+              <DealTriggerConfigFields config={config} onChange={onConfigChange} t={t} />
+            )}
+            {type === "campaign_entry" && (
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  {t("schedule")}
+                  {t("campaign")}
                 </label>
-                <Input
-                  placeholder="Cron expression or HH:mm"
-                  value={(config.schedule as string) ?? ""}
-                  onChange={(e) =>
-                    onConfigChange({ ...config, schedule: e.target.value })
-                  }
-                  className="bg-muted text-foreground"
+                <CampaignSelect
+                  value={(config.campaign_id as string) ?? ""}
+                  onChange={(v) => onConfigChange({ ...config, campaign_id: v })}
+                  t={t}
+                  allowEmpty
                 />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {t("scheduleHint")}
-                </p>
+              </div>
+            )}
+            {type === "conversation_assigned" && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  {t("config.agentLabel")}
+                </label>
+                <AgentSelect
+                  value={(config.agent_id as string) ?? ""}
+                  onChange={(v) => onConfigChange({ ...config, agent_id: v })}
+                  t={t}
+                />
               </div>
             )}
           </div>
@@ -912,6 +1232,7 @@ function KeywordMatchConfig({
   // cleaned, rejoined form. Seeded once on mount; this component remounts
   // when the trigger type changes, so the seed stays in sync.
   const [draft, setDraft] = useState(keywords.join(", "))
+  const [sample, setSample] = useState("")
 
   // Persist the default the <select> displays. The dropdown falls back to
   // "contains" for display, but leaving it untouched would otherwise omit
@@ -924,6 +1245,34 @@ function KeywordMatchConfig({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const liveKeywords = draft
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const matchType = config?.match_type ?? "contains"
+  const hintKey =
+    matchType === "word"
+      ? "config.matchWordHint"
+      : matchType === "exact"
+        ? "config.matchExactHint"
+        : matchType === "starts_with"
+          ? "config.matchStartsWithHint"
+          : matchType === "ends_with"
+            ? "config.matchEndsWithHint"
+            : "config.matchContainsHint"
+  const sampleKeyword = liveKeywords[0] || "JOIN"
+  const sampleFires =
+    sample.trim() && liveKeywords.length > 0
+      ? keywordTextMatches(
+          {
+            keywords: liveKeywords,
+            match_type: matchType,
+            case_sensitive: Boolean(config?.case_sensitive),
+          },
+          sample,
+        )
+      : null
 
   function commit() {
     const parsed = draft
@@ -963,7 +1312,12 @@ function KeywordMatchConfig({
           onChange={(e) =>
             onChange({
               ...config,
-              match_type: e.target.value as "exact" | "contains" | "word",
+              match_type: e.target.value as
+                | "exact"
+                | "contains"
+                | "word"
+                | "starts_with"
+                | "ends_with",
             })
           }
           className="w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground focus:outline-none"
@@ -971,16 +1325,44 @@ function KeywordMatchConfig({
           <option value="contains">{t("config.matchContains")}</option>
           <option value="word">{t("config.matchWord")}</option>
           <option value="exact">{t("config.matchExact")}</option>
+          <option value="starts_with">{t("config.matchStartsWith")}</option>
+          <option value="ends_with">{t("config.matchEndsWith")}</option>
         </select>
-        {/* Only worth explaining for `word` — "contains" and "exact" read
-            for themselves, and this is the one that changes which messages
-            fire an automation in a way that isn't obvious. */}
-        {config?.match_type === "word" && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            {t("config.matchWordHint")}
+        <p className="mt-1 text-xs text-muted-foreground">{t(hintKey)}</p>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+          {t("config.matchSampleLabel")}
+        </label>
+        <Input
+          value={sample}
+          onChange={(e) => setSample(e.target.value)}
+          placeholder={t("config.matchSamplePlaceholder", {
+            keyword: sampleKeyword,
+          })}
+          className="bg-muted text-foreground"
+        />
+        {sampleFires === true && (
+          <p className="mt-1 text-xs text-emerald-400">
+            {t("config.matchWouldFire")}
+          </p>
+        )}
+        {sampleFires === false && (
+          <p className="mt-1 text-xs text-rose-400">
+            {t("config.matchWouldNotFire")}
           </p>
         )}
       </div>
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={Boolean(config?.case_sensitive)}
+          onChange={(e) =>
+            onChange({ ...config, case_sensitive: e.target.checked })
+          }
+        />
+        {t("config.caseSensitive")}
+      </label>
     </div>
   )
 }
@@ -1050,6 +1432,7 @@ interface StepListProps {
   updateStep: (path: StepPath, updater: (s: BuilderStep) => BuilderStep) => void
   addStepAt: (parent: ParentScope, index: number, type: AutomationStepType) => void
   deleteStepAt: (path: StepPath) => void
+  duplicateStepAt: (path: StepPath) => void
   moveStepAt: (path: StepPath, direction: -1 | 1) => void
 }
 
@@ -1090,10 +1473,14 @@ function StepRenderer({
 } & Omit<StepListProps, "steps" | "basePath" | "scope">) {
   const t = useTranslations("Automations.builder")
   const path = childPath(basePath, scope, index)
-  const meta = STEP_META[step.step_type]
+  const meta = STEP_META[step.step_type] ?? {
+    label: step.step_type,
+    icon: Zap,
+    border: "border-l-border",
+  }
   const Icon = meta.icon
   const expanded = props.expandedId === step.cid
-  const isCondition = step.step_type === "condition"
+  const isBranching = BRANCHING_STEPS.has(step.step_type)
   const nested = basePath.length > 0
   // Card widths on mobile fill the full canvas column (max-w-2xl px-4
   // still keeps them reasonable). On sm+ fixed widths come back so the
@@ -1109,7 +1496,7 @@ function StepRenderer({
   // 320px a step gets at the top level for the same editors to fit.
   const width = nested
     ? "w-full"
-    : isCondition
+    : isBranching
       ? "w-full max-w-[600px] sm:w-[600px]"
       : "w-full max-w-[320px] sm:w-80"
 
@@ -1133,7 +1520,7 @@ function StepRenderer({
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                {isCondition ? "Condition" : step.step_type === "wait" ? "Wait" : "Action"}
+                {isBranching ? t("cardKind.branch") : step.step_type === "wait" || step.step_type === "ask_question" ? t("cardKind.wait") : t("cardKind.action")}
               </div>
               <div className="truncate text-sm font-medium text-foreground">{t(`steps.${meta.label}`)}</div>
               <div className="truncate text-[11px] text-muted-foreground">{previewFor(step)}</div>
@@ -1168,6 +1555,14 @@ function StepRenderer({
                   >
                     <ArrowDown className="h-4 w-4" />
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t("duplicate")}
+                    onClick={() => props.duplicateStepAt(path)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
                 </div>
                 <Button
                   variant="destructive"
@@ -1182,7 +1577,7 @@ function StepRenderer({
           )}
         </div>
 
-        {isCondition && (
+        {isBranching && (
           <ConditionBranches step={step} path={path} {...props} />
         )}
       </div>
@@ -1190,7 +1585,7 @@ function StepRenderer({
       {/* A condition branches into Yes/No (rendered above by
           ConditionBranches), so it has no linear "continue" path — adding
           the trailing connector here would produce a spurious third output. */}
-      {!isCondition && (
+      {!isBranching && (
         <AddButton onPick={(t) => props.addStepAt(scope, index + 1, t)} />
       )}
     </>
@@ -1270,15 +1665,27 @@ function AddButton({ onPick }: { onPick: (t: AutomationStepType) => void }) {
           align="start"
           className="max-h-80 min-w-56 overflow-y-auto border-border bg-popover"
         >
-          {ADDABLE_STEPS.map((tp) => {
-            const Icon = STEP_META[tp].icon
-            return (
-              <DropdownMenuItem key={tp} onClick={() => onPick(tp)}>
-                <Icon className="h-4 w-4" />
-                {t(`steps.${STEP_META[tp].label}`)}
-              </DropdownMenuItem>
-            )
-          })}
+          {ADDABLE_GROUPS.map((group, i) => (
+            // DropdownMenuGroup (base-ui Menu.Group) is REQUIRED: the
+            // DropdownMenuLabel below is base-ui's Menu.GroupLabel, which
+            // throws at render without a Menu.Group ancestor. A plain <div>
+            // here crashed the page when this menu opened.
+            <Fragment key={group.category}>
+              {i > 0 && <DropdownMenuSeparator />}
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>{t(`categories.${group.category}`)}</DropdownMenuLabel>
+                {group.types.map((tp) => {
+                  const Icon = STEP_META[tp].icon
+                  return (
+                    <DropdownMenuItem key={tp} onClick={() => onPick(tp)}>
+                      <Icon className="h-4 w-4" />
+                      {t(`steps.${STEP_META[tp].label}`)}
+                    </DropdownMenuItem>
+                  )
+                })}
+              </DropdownMenuGroup>
+            </Fragment>
+          ))}
         </DropdownMenuContent>
       </DropdownMenu>
       <div className="h-4 w-[2px] bg-border" aria-hidden />
@@ -1311,6 +1718,9 @@ function StepEditor({
             onChange={(e) => set({ text: e.target.value })}
             placeholder={t("config.placeholderMessageText")}
             className="min-h-24 bg-muted text-foreground"
+          />
+          <VariableHints
+            onInsert={(token) => set({ text: `${cfg.text ?? ""}${token}` })}
           />
         </FieldBlock>
       )
@@ -1505,8 +1915,270 @@ function StepEditor({
     case "close_conversation":
       return (
         <p className="text-xs text-muted-foreground">
-          {t("config.closeConversationHint", { defaultValue: "Sets the conversation status to \"closed\". No configuration needed." })}
+          {t("config.closeConversationHint")}
         </p>
+      )
+    case "send_media":
+      return (
+        <>
+          <FieldBlock label={t("config.mediaType")}>
+            <select
+              value={(cfg.media_type as string) ?? "image"}
+              onChange={(e) => set({ media_type: e.target.value })}
+              className={SELECT_CLASS}
+            >
+              <option value="image">{t("config.mediaImage")}</option>
+              <option value="video">{t("config.mediaVideo")}</option>
+              <option value="document">{t("config.mediaDocument")}</option>
+              <option value="audio">{t("config.mediaAudio")}</option>
+            </select>
+          </FieldBlock>
+          <FieldBlock label={t("config.mediaUrl")}>
+            <Input
+              value={(cfg.url as string) ?? ""}
+              onChange={(e) => set({ url: e.target.value })}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+          <FieldBlock label={t("config.caption")}>
+            <Input
+              value={(cfg.caption as string) ?? ""}
+              onChange={(e) => set({ caption: e.target.value })}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+        </>
+      )
+    case "ask_question":
+      return (
+        <>
+          <FieldBlock label={t("config.questionText")}>
+            <Textarea
+              value={(cfg.text as string) ?? ""}
+              onChange={(e) => set({ text: e.target.value })}
+              className="min-h-20 bg-muted text-foreground"
+            />
+            <VariableHints
+              onInsert={(token) => set({ text: `${cfg.text ?? ""}${token}` })}
+            />
+          </FieldBlock>
+          <FieldBlock label={t("config.varKey")}>
+            <Input
+              value={(cfg.var_key as string) ?? ""}
+              onChange={(e) => set({ var_key: e.target.value })}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+        </>
+      )
+    case "capture":
+      return (
+        <FieldBlock label={t("config.varKey")}>
+          <Input
+            value={(cfg.var_key as string) ?? ""}
+            onChange={(e) => set({ var_key: e.target.value })}
+            className="bg-muted text-foreground"
+          />
+        </FieldBlock>
+      )
+    case "validate":
+      return (
+        <>
+          <FieldBlock label={t("config.varKey")}>
+            <Input
+              value={(cfg.var_key as string) ?? ""}
+              onChange={(e) => set({ var_key: e.target.value })}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+          <FieldBlock label={t("config.rule")}>
+            <select
+              value={(cfg.rule as string) ?? "required"}
+              onChange={(e) => set({ rule: e.target.value })}
+              className={SELECT_CLASS}
+            >
+              <option value="required">{t("config.ruleRequired")}</option>
+              <option value="email">{t("config.ruleEmail")}</option>
+              <option value="phone">{t("config.rulePhone")}</option>
+              <option value="number">{t("config.ruleNumber")}</option>
+              <option value="regex">{t("config.ruleRegex")}</option>
+            </select>
+          </FieldBlock>
+        </>
+      )
+    case "add_note":
+      return (
+        <FieldBlock label={t("config.noteText")}>
+          <Textarea
+            value={(cfg.text as string) ?? ""}
+            onChange={(e) => set({ text: e.target.value })}
+            className="min-h-20 bg-muted text-foreground"
+          />
+        </FieldBlock>
+      )
+    case "set_conversation_status":
+      return (
+        <FieldBlock label={t("config.statusLabel")}>
+          <select
+            value={(cfg.status as string) ?? "open"}
+            onChange={(e) => set({ status: e.target.value })}
+            className={SELECT_CLASS}
+          >
+            <option value="open">{t("config.statusOpen")}</option>
+            <option value="pending">{t("config.statusPending")}</option>
+            <option value="closed">{t("config.statusClosed")}</option>
+          </select>
+        </FieldBlock>
+      )
+    case "notify_agent":
+      return (
+        <>
+          <FieldBlock label={t("config.agentLabel")}>
+            <AgentSelect
+              value={(cfg.agent_id as string) ?? ""}
+              onChange={(v) => set({ agent_id: v })}
+              t={t}
+            />
+          </FieldBlock>
+          <FieldBlock label={t("config.titleLabel")}>
+            <Input
+              value={(cfg.title as string) ?? ""}
+              onChange={(e) => set({ title: e.target.value })}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+        </>
+      )
+    case "campaign_add_entry":
+    case "campaign_generate_reference":
+      return (
+        <FieldBlock label={t("campaign")}>
+          <CampaignSelect
+            value={(cfg.campaign_id as string) ?? ""}
+            onChange={(v) => set({ campaign_id: v })}
+            t={t}
+          />
+        </FieldBlock>
+      )
+    case "campaign_set_status":
+      return (
+        <>
+          <FieldBlock label={t("campaign")}>
+            <CampaignSelect
+              value={(cfg.campaign_id as string) ?? ""}
+              onChange={(v) => set({ campaign_id: v })}
+              t={t}
+            />
+          </FieldBlock>
+          <FieldBlock label={t("config.statusLabel")}>
+            <select
+              value={
+                (cfg.status as string) === "active"
+                  ? "in_progress"
+                  : ((cfg.status as string) ?? "in_progress")
+              }
+              onChange={(e) => set({ status: e.target.value })}
+              className={SELECT_CLASS}
+            >
+              <option value="in_progress">{t("config.entryInProgress")}</option>
+              <option value="completed">{t("config.entryCompleted")}</option>
+              <option value="invalid">{t("config.entryInvalid")}</option>
+              <option value="duplicate">{t("config.entryDuplicate")}</option>
+              <option value="disqualified">{t("config.entryDisqualified")}</option>
+              <option value="withdrawn">{t("config.entryWithdrawn")}</option>
+            </select>
+          </FieldBlock>
+        </>
+      )
+    case "campaign_set_field":
+      return (
+        <>
+          <FieldBlock label={t("campaign")}>
+            <CampaignSelect
+              value={(cfg.campaign_id as string) ?? ""}
+              onChange={(v) => set({ campaign_id: v })}
+              t={t}
+            />
+          </FieldBlock>
+          <FieldBlock label={t("config.fieldKey")}>
+            <Input
+              value={(cfg.field_key as string) ?? ""}
+              onChange={(e) => set({ field_key: e.target.value })}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+          <FieldBlock label={t("config.valueLabel")}>
+            <Input
+              value={(cfg.value as string) ?? ""}
+              onChange={(e) => set({ value: e.target.value })}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+        </>
+      )
+    case "random_split":
+      return (
+        <FieldBlock label={t("config.percent")}>
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            value={(cfg.percent as number) ?? 50}
+            onChange={(e) => set({ percent: Number(e.target.value) })}
+            className="bg-muted text-foreground"
+          />
+        </FieldBlock>
+      )
+    case "go_to":
+      return (
+        <FieldBlock label={t("config.targetNode")}>
+          <Input
+            value={(cfg.target_node_id as string) ?? ""}
+            onChange={(e) => set({ target_node_id: e.target.value })}
+            className="bg-muted font-mono text-foreground"
+          />
+        </FieldBlock>
+      )
+    case "end":
+      return (
+        <p className="text-xs text-muted-foreground">{t("config.endHint")}</p>
+      )
+    case "update_deal":
+      return (
+        <>
+          <DealPipelineFields
+            pipelineId=""
+            stageId={(cfg.stage_id as string) ?? ""}
+            onChange={(patch) => set(patch)}
+            t={t}
+          />
+          <FieldBlock label={t("config.titleLabel")}>
+            <Input
+              value={(cfg.title as string) ?? ""}
+              onChange={(e) => set({ title: e.target.value })}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+        </>
+      )
+    case "upsert_contact":
+      return (
+        <>
+          <FieldBlock label={t("config.fieldLabel")}>
+            <ContactFieldSelect
+              value={(cfg.field as string) ?? "name"}
+              onChange={(v) => set({ field: v })}
+              t={t}
+            />
+          </FieldBlock>
+          <FieldBlock label={t("config.valueLabel")}>
+            <Input
+              value={(cfg.value as string) ?? ""}
+              onChange={(e) => set({ value: e.target.value })}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+        </>
       )
     default:
       return null
@@ -1585,7 +2257,9 @@ export function fromServerSteps(nodes: ServerStepNode[]): BuilderStep[] {
     step_type: n.step_type as AutomationStepType,
     step_config: n.step_config ?? {},
     branches:
-      n.step_type === "condition"
+      BRANCHING_STEPS.has(n.step_type as AutomationStepType) ||
+      (n.branches?.yes?.length ?? 0) > 0 ||
+      (n.branches?.no?.length ?? 0) > 0
         ? {
             yes: fromServerSteps(n.branches?.yes ?? []),
             no: fromServerSteps(n.branches?.no ?? []),

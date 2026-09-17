@@ -3,6 +3,7 @@ import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
+  engineSendMedia,
 } from '@/lib/flows/meta-send'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
@@ -250,3 +251,5 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
 
   return { whatsapp_message_id: waMessageId }
 }
+
+export { engineSendMedia }

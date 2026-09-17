@@ -85,7 +85,9 @@ function expandFromSeeds(rows: SeedRow[]): BuilderStep[] {
     step_type: r.step_type,
     step_config: r.step_config,
     branches:
-      r.step_type === "condition" ? { yes: [], no: [] } : undefined,
+      r.step_type === "condition" || r.step_type === "random_split"
+        ? { yes: [], no: [] }
+        : undefined,
   }))
   const roots: BuilderStep[] = []
   rows.forEach((r, i) => {

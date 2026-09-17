@@ -69,6 +69,6 @@ docker run -d --env-file .env.local -e PORT=3000 -p 3000:3000 wacrm
 - Nothing inside the container is scheduled. If you use automation
   Wait steps or flows, point an external scheduler at
   `GET /api/automations/cron` and `GET /api/flows/cron` on this
-  deployment, sending the shared secret in the `x-cron-secret` header
-  (`AUTOMATION_CRON_SECRET`, see `.env.local.example`). Both return
-  503 until that variable is set.
+  deployment. Send the shared secret as `x-cron-secret` or as
+  `Authorization: Bearer …` (`AUTOMATION_CRON_SECRET`, see
+  `.env.local.example`). Both return 503 until that variable is set.

@@ -13,9 +13,7 @@ import { supabaseAdmin } from '@/lib/flows/admin-client'
  * DELETE /api/flows/[id] — hard delete (RLS+CASCADE clean up nodes,
  *                          runs, events).
  *
- * All three require a signed-in caller who owns the flow. Flows is in
- * soft-GA — the beta gate that previously 404'd non-beta accounts is
- * gone; the "Beta" label in the UI is the only remaining signal.
+ * All three require a signed-in caller who owns the flow.
  */
 
 async function requireOwnership(

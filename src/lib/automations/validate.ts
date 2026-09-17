@@ -44,7 +44,7 @@ function walk(steps: StepLike[], prefix: string, issues: ValidationIssue[]): voi
   steps.forEach((s, i) => {
     const path = `${prefix}steps[${i}]`
     validateOne(s, path, issues)
-    if (s.step_type === 'condition' && s.branches) {
+    if (s.branches) {
       if (s.branches.yes) walk(s.branches.yes, `${path}.yes.`, issues)
       if (s.branches.no) walk(s.branches.no, `${path}.no.`, issues)
     }
@@ -108,6 +108,7 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       }
       break
     case 'wait':
+      if (nonEmpty(c.until)) break
       if (typeof c.amount !== 'number' || !Number.isFinite(c.amount) || c.amount <= 0) {
         issues.push({ path: `${path}.amount`, message: 'wait amount must be greater than 0' })
       }
@@ -144,7 +145,96 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       }
       break
     case 'close_conversation':
-      // No config required.
+    case 'end':
+      break
+    case 'send_media':
+      if (!nonEmpty(c.url)) {
+        issues.push({ path: `${path}.url`, message: 'media URL is required' })
+      }
+      if (!['image', 'video', 'document', 'audio'].includes(String(c.media_type))) {
+        issues.push({ path: `${path}.media_type`, message: 'media type is required' })
+      }
+      break
+    case 'ask_question':
+      if (!nonEmpty(c.text)) {
+        issues.push({ path: `${path}.text`, message: 'question text is required' })
+      }
+      if (!nonEmpty(c.var_key)) {
+        issues.push({ path: `${path}.var_key`, message: 'variable key is required' })
+      }
+      break
+    case 'capture':
+      if (!nonEmpty(c.var_key)) {
+        issues.push({ path: `${path}.var_key`, message: 'variable key is required' })
+      }
+      break
+    case 'validate':
+      if (!nonEmpty(c.var_key)) {
+        issues.push({ path: `${path}.var_key`, message: 'variable key is required' })
+      }
+      if (!['required', 'email', 'phone', 'number', 'regex'].includes(String(c.rule))) {
+        issues.push({ path: `${path}.rule`, message: 'validation rule is required' })
+      }
+      break
+    case 'add_note':
+      if (!nonEmpty(c.text)) {
+        issues.push({ path: `${path}.text`, message: 'note text is required' })
+      }
+      break
+    case 'set_conversation_status':
+      if (!['open', 'closed', 'pending'].includes(String(c.status))) {
+        issues.push({ path: `${path}.status`, message: 'conversation status is required' })
+      }
+      break
+    case 'notify_agent':
+      if (!nonEmpty(c.title)) {
+        issues.push({ path: `${path}.title`, message: 'notification title is required' })
+      }
+      break
+    case 'campaign_add_entry':
+      if (!nonEmpty(c.campaign_id)) {
+        issues.push({ path: `${path}.campaign_id`, message: 'campaign is required' })
+      }
+      break
+    case 'campaign_set_status':
+      if (!['in_progress', 'completed', 'invalid', 'duplicate', 'disqualified', 'active', 'withdrawn'].includes(String(c.status))) {
+        issues.push({ path: `${path}.status`, message: 'entry status is required' })
+      }
+      break
+    case 'campaign_generate_reference':
+      break
+    case 'campaign_set_field':
+      if (!nonEmpty(c.field_key)) {
+        issues.push({ path: `${path}.field_key`, message: 'field key is required' })
+      }
+      if (c.value === undefined || c.value === null || c.value === '') {
+        issues.push({ path: `${path}.value`, message: 'field value is required' })
+      }
+      break
+    case 'random_split': {
+      const p = Number(c.percent)
+      if (!Number.isFinite(p) || p < 0 || p > 100) {
+        issues.push({ path: `${path}.percent`, message: 'split percent must be 0–100' })
+      }
+      break
+    }
+    case 'go_to':
+      if (!nonEmpty(c.target_node_id)) {
+        issues.push({ path: `${path}.target_node_id`, message: 'go-to target is required' })
+      }
+      break
+    case 'update_deal':
+      if (!c.stage_id && !c.title && c.value === undefined && !c.status) {
+        issues.push({ path, message: 'update_deal needs at least one field' })
+      }
+      break
+    case 'upsert_contact':
+      if (!nonEmpty(c.field)) {
+        issues.push({ path: `${path}.field`, message: 'field name is required' })
+      }
+      if (c.value === undefined || c.value === null || c.value === '') {
+        issues.push({ path: `${path}.value`, message: 'field value is required' })
+      }
       break
     default:
       issues.push({ path, message: `unknown step type: ${step.step_type}` })
@@ -175,11 +265,13 @@ export function validateTriggerForActivation(
       cfg.match_type != null &&
       cfg.match_type !== 'exact' &&
       cfg.match_type !== 'contains' &&
-      cfg.match_type !== 'word'
+      cfg.match_type !== 'word' &&
+      cfg.match_type !== 'starts_with' &&
+      cfg.match_type !== 'ends_with'
     ) {
       issues.push({
         path: 'trigger.match_type',
-        message: 'match type must be "exact", "contains" or "word"',
+        message: 'match type must be "exact", "contains", "word", "starts_with" or "ends_with"',
       })
     }
   } else if (triggerType === 'time_based') {
@@ -203,6 +295,8 @@ export function validateTriggerForActivation(
         message: 'reply ids cannot be empty strings',
       })
     }
+  } else if (triggerType === 'campaign_entry') {
+    // Optional campaign_id filter — empty means any campaign.
   }
 
   return issues

@@ -455,8 +455,38 @@ function validateNode(
         });
       }
       const seenIds = new Set<string>();
+      const multipleSections = sections.length > 1;
       sections.forEach((section, si) => {
         const rows = section.rows ?? [];
+        if (rows.length < 1) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: `sections.${si}`,
+            message: `Section ${si + 1} needs at least one row.`,
+          });
+        }
+        const sectionTitle = (section.title ?? "").trim();
+        if (multipleSections && !sectionTitle) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: `sections.${si}.title`,
+            message: `Section ${si + 1} needs a title when the list has more than one section.`,
+          });
+        } else if (
+          sectionTitle.length > INTERACTIVE_LIMITS.listSectionTitleMaxLength
+        ) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: `sections.${si}.title`,
+            message: `Section ${si + 1} title exceeds ${INTERACTIVE_LIMITS.listSectionTitleMaxLength} chars.`,
+          });
+        }
         rows.forEach((row, ri) => {
           const field = `sections.${si}.rows.${ri}`;
           if (!row.reply_id?.trim()) {

@@ -4,6 +4,7 @@ import {
   type AccountRole,
   canDeleteAccount,
   canEditSettings,
+  canExportCampaigns,
   canManageMembers,
   canSendMessages,
   canTransferOwnership,
@@ -112,6 +113,13 @@ describe("capability predicates", () => {
     expect(canViewOnly("admin")).toBe(false);
     expect(canViewOnly("agent")).toBe(false);
     expect(canViewOnly("viewer")).toBe(true);
+  });
+
+  it("canExportCampaigns: admin+ only", () => {
+    expect(canExportCampaigns("owner")).toBe(true);
+    expect(canExportCampaigns("admin")).toBe(true);
+    expect(canExportCampaigns("agent")).toBe(false);
+    expect(canExportCampaigns("viewer")).toBe(false);
   });
 
   it("canDeleteAccount: owner only", () => {

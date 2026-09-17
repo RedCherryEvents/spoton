@@ -22,6 +22,7 @@
  * /flows/[id]/runs) — those don't belong in the hook.
  */
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -34,16 +35,27 @@ import {
   Trash2,
   Workflow,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { GatedButton } from "@/components/ui/gated-button";
 import {
-  useFlowEditor,
-  type BuilderState,
-} from "./flow-editor-state";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useCan } from "@/hooks/use-can";
+import { cn } from "@/lib/utils";
+import { useFlowEditor, type BuilderState } from "./flow-editor-state";
 
 export function EditorHeader() {
   const router = useRouter();
+  const canWrite = useCan("send-messages");
+  const t = useTranslations("Flows.header");
+  const tList = useTranslations("Flows.list");
   const {
     flow,
     state,
@@ -56,6 +68,22 @@ export function EditorHeader() {
     setStatus,
     deleteFlow,
   } = useFlowEditor();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  function goBack() {
+    if (dirty && !window.confirm(t("leaveUnsavedConfirm"))) return;
+    router.push("/flows");
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deleteFlow();
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-1.5 px-6 pt-5">
@@ -63,9 +91,9 @@ export function EditorHeader() {
         {/* ---- left: back · icon · name · status · edited ---- */}
         <button
           type="button"
-          onClick={() => router.push("/flows")}
-          title="Back to Flows"
-          aria-label="Back to Flows"
+          onClick={goBack}
+          title={t("backToFlows")}
+          aria-label={t("backToFlows")}
           className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -76,20 +104,21 @@ export function EditorHeader() {
         <input
           value={state.name}
           onChange={(e) => setState((s) => ({ ...s, name: e.target.value }))}
-          placeholder="Flow name"
+          placeholder={t("flowNamePlaceholder")}
           spellCheck={false}
-          aria-label="Flow name"
+          aria-label={t("flowName")}
+          readOnly={!canWrite}
           className="min-w-[120px] max-w-[340px] rounded-lg border border-transparent bg-transparent px-2 py-1 text-lg font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-muted focus:border-primary focus:bg-transparent focus:shadow-[0_0_0_3px_var(--primary-soft)]"
         />
-        <StatusChip status={state.status} />
+        <StatusChip status={state.status} t={t} />
         {dirty && (
           <span
             className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-amber-300"
-            title="Unsaved changes — hit Save to persist"
+            title={t("unsavedTitle")}
             aria-live="polite"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-            Edited
+            {t("unsaved")}
           </span>
         )}
 
@@ -101,24 +130,28 @@ export function EditorHeader() {
             onClick={() => router.push(`/flows/${flow.id}/runs`)}
           >
             <History className="h-3.5 w-3.5" />
-            Runs
+            {t("runs")}
             <span className="ml-0.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
               {flow.execution_count}
             </span>
           </Button>
-          <Button
+          <GatedButton
             variant="ghost"
             size="sm"
-            onClick={() => void deleteFlow()}
+            canAct={canWrite}
+            gateReason="delete flows"
+            onClick={() => setConfirmDelete(true)}
             className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Delete
-          </Button>
+            {t("delete")}
+          </GatedButton>
           {state.status === "active" ? (
-            <Button
+            <GatedButton
               variant="outline"
               size="sm"
+              canAct={canWrite}
+              gateReason="pause flows"
               onClick={() => void setStatus("draft")}
               disabled={activating}
             >
@@ -127,18 +160,18 @@ export function EditorHeader() {
               ) : (
                 <PauseCircle className="h-3.5 w-3.5" />
               )}
-              Pause
-            </Button>
+              {t("pause")}
+            </GatedButton>
           ) : (
-            <Button
+            <GatedButton
               variant="outline"
               size="sm"
+              canAct={canWrite}
+              gateReason="activate flows"
               onClick={() => void setStatus("active")}
               disabled={activating || !canActivate}
               title={
-                !canActivate
-                  ? "Fix the issues below before activating"
-                  : undefined
+                !canActivate ? t("activateBlocked") : undefined
               }
             >
               {activating ? (
@@ -146,17 +179,23 @@ export function EditorHeader() {
               ) : (
                 <PlayCircle className="h-3.5 w-3.5" />
               )}
-              Activate
-            </Button>
+              {t("activate")}
+            </GatedButton>
           )}
-          <Button onClick={() => void save()} disabled={saving} size="sm">
+          <GatedButton
+            canAct={canWrite}
+            gateReason="save flows"
+            onClick={() => void save()}
+            disabled={saving}
+            size="sm"
+          >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Save className="h-3.5 w-3.5" />
             )}
-            Save
-          </Button>
+            {t("save")}
+          </GatedButton>
         </div>
       </div>
 
@@ -166,29 +205,68 @@ export function EditorHeader() {
         onChange={(e) =>
           setState((s) => ({ ...s, description: e.target.value }))
         }
-        placeholder="Add a short description (internal — customers don't see this)"
-        aria-label="Flow description"
+        placeholder={t("descriptionPlaceholder")}
+        aria-label={t("descriptionLabel")}
+        readOnly={!canWrite}
         className="w-full max-w-[78ch] rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] text-muted-foreground outline-none transition-colors placeholder:text-muted-foreground/60 hover:bg-muted/50 focus:border-primary focus:bg-transparent focus:text-foreground"
       />
+
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{tList("deleteTitle")}</DialogTitle>
+            <DialogDescription>
+              {tList("deleteDesc", { name: state.name })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+            >
+              {tList("cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void handleDelete()}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              {t("delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function StatusChip({ status }: { status: BuilderState["status"] }) {
+function StatusChip({
+  status,
+  t,
+}: {
+  status: BuilderState["status"];
+  t: ReturnType<typeof useTranslations>;
+}) {
   const cfg = {
     draft: {
       // Neutral, not amber — amber is reserved for the adjacent
       // "Edited" dirty signal, so the two don't read as the same alert.
       cls: "border-border bg-muted text-muted-foreground",
-      label: "Draft",
+      label: t("statusDraft"),
     },
     active: {
       cls: "border-emerald-600/40 bg-emerald-500/10 text-emerald-300",
-      label: "Active",
+      label: t("statusActive"),
     },
     archived: {
       cls: "border-border bg-muted/50 text-muted-foreground",
-      label: "Archived",
+      label: t("statusArchived"),
     },
   }[status];
   return (

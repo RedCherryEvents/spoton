@@ -249,6 +249,21 @@ describe("validateTriggerForActivation", () => {
     ).toEqual([]);
   });
 
+  it("accepts starts_with and ends_with match types", () => {
+    expect(
+      validateTriggerForActivation("keyword_match", {
+        keywords: ["JOIN"],
+        match_type: "starts_with",
+      }),
+    ).toEqual([]);
+    expect(
+      validateTriggerForActivation("keyword_match", {
+        keywords: ["stop"],
+        match_type: "ends_with",
+      }),
+    ).toEqual([]);
+  });
+
   it("accepts the word match_type (issue #409)", () => {
     // Activation validation has to stay in step with the engine and the
     // builder's dropdown — an automation the UI can save must not be

@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
 import { uploadAccountMedia, MEDIA_MAX_BYTES } from "@/lib/storage/upload-media";
 import { slugify, type BuilderNode } from "../shared";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
@@ -486,6 +487,7 @@ function SendListForm({
             <div className="mb-2 flex items-center gap-2">
               <Input
                 value={section.title ?? ""}
+                maxLength={INTERACTIVE_LIMITS.listSectionTitleMaxLength}
                 onChange={(e) =>
                   updateSection(sIdx, { title: e.target.value })
                 }

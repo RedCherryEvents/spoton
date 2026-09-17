@@ -42,6 +42,16 @@ BEGIN
     RAISE EXCEPTION 'public.accounts is missing — migration 017 did not apply';
   END IF;
 
+  IF to_regclass('public.campaigns') IS NULL THEN
+    RAISE EXCEPTION 'public.campaigns is missing — migration 040 did not apply';
+  END IF;
+  IF to_regclass('public.campaign_entries') IS NULL THEN
+    RAISE EXCEPTION 'public.campaign_entries is missing — migration 040 did not apply';
+  END IF;
+  IF to_regclass('public.campaign_report_shares') IS NULL THEN
+    RAISE EXCEPTION 'public.campaign_report_shares is missing — migration 041 did not apply';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;

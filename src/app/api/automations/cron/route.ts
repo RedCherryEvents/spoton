@@ -1,14 +1,12 @@
-import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
+import { authorizeCron } from '@/lib/cron-auth'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { resumePendingExecution } from '@/lib/automations/engine'
+import { resumePendingExecution, fireTimeBasedAutomations } from '@/lib/automations/engine'
 import type { AutomationContext } from '@/lib/automations/engine'
 
 /**
  * Drain due `automation_pending_executions` rows. Meant to be hit
- * on a schedule (Vercel Cron / external pinger) — requires a shared
- * secret via the `x-cron-secret` header to match
- * `AUTOMATION_CRON_SECRET`.
+ * on a schedule (Vercel Cron / external pinger) — see `authorizeCron`.
  *
  * The claim step (status = 'running') serves as a simple lock so
  * overlapping invocations don't double-process rows. Best-effort
@@ -16,19 +14,8 @@ import type { AutomationContext } from '@/lib/automations/engine'
  * two-step UPDATE-by-id.
  */
 export async function GET(request: Request) {
-  const expected = process.env.AUTOMATION_CRON_SECRET
-  if (!expected) {
-    return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
-  }
-  const supplied = request.headers.get('x-cron-secret') ?? ''
-  const suppliedBuf = Buffer.from(supplied)
-  const expectedBuf = Buffer.from(expected)
-  if (
-    suppliedBuf.length !== expectedBuf.length ||
-    !timingSafeEqual(suppliedBuf, expectedBuf)
-  ) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = authorizeCron(request)
+  if (denied) return denied
 
   const admin = supabaseAdmin()
   const { data: due, error } = await admin
@@ -70,5 +57,7 @@ export async function GET(request: Request) {
     processed++
   }
 
-  return NextResponse.json({ processed })
+  const scheduled = await fireTimeBasedAutomations()
+
+  return NextResponse.json({ processed, scheduled })
 }

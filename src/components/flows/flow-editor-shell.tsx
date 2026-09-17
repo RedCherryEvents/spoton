@@ -95,7 +95,7 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
 
   return (
     <FlowEditorProvider initialFlow={initialFlow} initialNodes={initialNodes}>
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-full min-h-0 flex-1 flex-col">
         <EditorHeader />
 
         {/* ---- mode row: view toggle + node-type legend ----

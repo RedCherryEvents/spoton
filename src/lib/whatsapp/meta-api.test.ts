@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   INTERACTIVE_LIMITS,
+  MetaApiError,
+  formatMetaError,
+  isMetaAuthError,
   sendInteractiveButtons,
   sendInteractiveList,
+  sendTextMessage,
 } from "./meta-api";
 
 // All assertions in this file run BEFORE the network call. We stub fetch
@@ -200,21 +204,65 @@ describe("sendInteractiveList — validation", () => {
         ...BASE_ARGS,
         buttonLabel: "Open",
         sections: [
-          { rows: [{ id: "dupe", title: "First" }] },
-          { rows: [{ id: "dupe", title: "Second" }] },
+          { title: "A", rows: [{ id: "dupe", title: "First" }] },
+          { title: "B", rows: [{ id: "dupe", title: "Second" }] },
         ],
       }),
     ).rejects.toThrow(/duplicate row id/);
   });
 
-  it("rejects an empty buttonLabel", async () => {
+  it("rejects a section title longer than 24 chars (Meta cap)", async () => {
     await expect(
       sendInteractiveList({
         ...BASE_ARGS,
-        buttonLabel: "",
+        buttonLabel: "Open",
+        sections: [
+          {
+            title: "x".repeat(INTERACTIVE_LIMITS.listSectionTitleMaxLength + 1),
+            rows: [ROW],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/section title exceeds/);
+  });
+
+  it("rejects a second untitled section (Meta requires titles when >1)", async () => {
+    await expect(
+      sendInteractiveList({
+        ...BASE_ARGS,
+        buttonLabel: "Open",
+        sections: [
+          { rows: [ROW] },
+          { rows: [{ id: "r2", title: "Row 2" }] },
+        ],
+      }),
+    ).rejects.toThrow(/title on every section/);
+  });
+
+  it("surfaces Meta error_data.details on a 131009", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "(#131009) Parameter value is not valid",
+              code: 131009,
+              error_data: { details: "Invalid section title length" },
+            },
+          }),
+          { status: 400 },
+        ),
+      ),
+    );
+
+    await expect(
+      sendInteractiveList({
+        ...BASE_ARGS,
+        buttonLabel: "Open",
         sections: [{ rows: [ROW] }],
       }),
-    ).rejects.toThrow(/requires a buttonLabel/);
+    ).rejects.toThrow(/Invalid section title length/);
   });
 
   it("sends the right payload shape when valid", async () => {
@@ -265,5 +313,66 @@ describe("sendInteractiveList — validation", () => {
         },
       },
     });
+  });
+});
+
+describe("Meta authentication errors", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the Graph code on Authentication Error", () => {
+    expect(
+      formatMetaError(
+        {
+          error: {
+            message: "Authentication Error",
+            type: "OAuthException",
+            code: 190,
+            error_subcode: 463,
+          },
+        },
+        "fallback",
+      ),
+    ).toBe("Authentication Error (#190/463)");
+  });
+
+  it("recognises expired-token Graph envelopes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                message: "Authentication Error",
+                type: "OAuthException",
+                code: 190,
+                error_subcode: 463,
+              },
+            }),
+            { status: 401 },
+          ),
+      ),
+    );
+
+    const err = await sendTextMessage({
+      phoneNumberId: "pn",
+      accessToken: "expired",
+      to: "27111",
+      text: "hi",
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(MetaApiError);
+    expect(err).toMatchObject({ code: 190, subcode: 463, httpStatus: 401 });
+    expect(isMetaAuthError(err)).toBe(true);
+  });
+
+  it("does not treat recipient-not-allowed as an auth failure", () => {
+    expect(
+      isMetaAuthError(
+        new Error("(#131030) Recipient phone number not in allowed list"),
+      ),
+    ).toBe(false);
   });
 });

@@ -76,6 +76,8 @@ vi.mock("./admin-client", () => {
       upsert: (p: unknown) => ((ops.type = "upsert"), (ops.payload = p), b),
       eq: (k: string, v: unknown) => (ops.filters.push(["eq", k, v]), b),
       gte: () => b,
+      lte: () => b,
+      in: () => b,
       is: () => b,
       order: () => b,
       limit: () => b,
@@ -102,9 +104,10 @@ vi.mock("./meta-send", () => ({
   engineSendText: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
   engineSendTemplate: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
   engineSendInteractive: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
+  engineSendMedia: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
 }));
 
-import { runAutomationsForTrigger, triggerMatches } from "./engine";
+import { runAutomationsForTrigger, triggerMatches, interpolateTemplate } from "./engine";
 import type { Automation, KeywordMatchTriggerConfig } from "@/types";
 
 const ACCOUNT = "acct-1";
@@ -539,14 +542,62 @@ describe("triggerMatches — keyword_match", () => {
     expect(on(a, "안녕하세요")).toBe(false);
   });
 
-  it("`exact` still requires the whole message to be the keyword", () => {
+  it("`exact` matches the whole message or the keyword as the first token", () => {
     const a = automation({ keywords: ["hi"], match_type: "exact" });
     expect(on(a, "hi")).toBe(true);
-    expect(on(a, "hi there")).toBe(false);
+    expect(on(a, "  HI  ")).toBe(true);
+    // Campaign traffic is almost never *only* the keyword.
+    expect(on(a, "hi there")).toBe(true);
+    expect(on(a, "WINICC2027 I want to enter")).toBe(false);
+    expect(on(a, "say hi")).toBe(false);
+    expect(on(a, "high")).toBe(false);
+  });
+
+  it("`exact` fires on a campaign keyword followed by more text", () => {
+    const a = automation({
+      keywords: ["WINICC2027"],
+      match_type: "exact",
+    });
+    expect(on(a, "WINICC2027")).toBe(true);
+    expect(on(a, "WINICC2027 I want to enter")).toBe(true);
+    expect(on(a, "please WINICC2027")).toBe(false);
+    expect(on(a, "WINICC2027xyz")).toBe(false);
+  });
+
+  it("`starts_with` matches a prefix", () => {
+    const a = automation({ keywords: ["JOIN"], match_type: "starts_with" });
+    expect(on(a, "JOIN ICC")).toBe(true);
+    expect(on(a, "please JOIN")).toBe(false);
+  });
+
+  it("`ends_with` matches a suffix", () => {
+    const a = automation({ keywords: ["stop"], match_type: "ends_with" });
+    expect(on(a, "please stop")).toBe(true);
+    expect(on(a, "stop now")).toBe(false);
   });
 
   it("ignores empty keywords and empty messages in `word` mode", () => {
     expect(on(automation({ keywords: [""], match_type: "word" }), "anything")).toBe(false);
     expect(on(automation({ keywords: ["hi"], match_type: "word" }), "")).toBe(false);
+  });
+});
+
+describe("interpolateTemplate", () => {
+  it("fills contact, campaign, entry, vars and message tokens", () => {
+    const out = interpolateTemplate(
+      "Hi {{ contact.name }} / {{ campaign.code }} / {{ entry.reference }} / {{ vars.answer }} / {{ message.text }}",
+      {
+        message_text: "hello",
+        vars: { answer: "yes" },
+        contact: { name: "Ada" },
+        campaign: { code: "ICC" },
+        entry: { reference: "ICC-1" },
+      },
+    );
+    expect(out).toBe("Hi Ada / ICC / ICC-1 / yes / hello");
+  });
+
+  it("replaces unknown tokens with empty string", () => {
+    expect(interpolateTemplate("x{{ missing.y }}z", {})).toBe("xz");
   });
 });

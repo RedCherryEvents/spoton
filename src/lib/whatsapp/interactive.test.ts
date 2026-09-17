@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { INTERACTIVE_LIMITS } from './meta-api'
 import {
   validateInteractivePayload,
   interactivePayloadPreviewText,
@@ -123,8 +124,49 @@ describe('validateInteractivePayload — list', () => {
     const res = validateInteractivePayload({
       ...validList,
       sections: [
-        { rows: [{ id: 'dup', title: 'A' }] },
-        { rows: [{ id: 'dup', title: 'B' }] },
+        { title: 'A', rows: [{ id: 'dup', title: 'A' }] },
+        { title: 'B', rows: [{ id: 'dup', title: 'B' }] },
+      ],
+    })
+    expect(res.ok).toBe(false)
+  })
+
+  it('rejects a section with zero rows', () => {
+    const res = validateInteractivePayload({
+      ...validList,
+      sections: [
+        { title: 'A', rows: [{ id: 'r1', title: 'One' }] },
+        { title: 'B', rows: [] },
+      ],
+    })
+    expect(res).toEqual({
+      ok: false,
+      error: 'Every list section needs at least one row.',
+    })
+  })
+
+  it('requires a title on every section when there is more than one', () => {
+    const res = validateInteractivePayload({
+      ...validList,
+      sections: [
+        { rows: [{ id: 'r1', title: 'One' }] },
+        { rows: [{ id: 'r2', title: 'Two' }] },
+      ],
+    })
+    expect(res.ok).toBe(false)
+    expect(res).toMatchObject({
+      error: 'Every section needs a title when a list has more than one section.',
+    })
+  })
+
+  it('caps section title at 24 chars', () => {
+    const res = validateInteractivePayload({
+      ...validList,
+      sections: [
+        {
+          title: 'x'.repeat(INTERACTIVE_LIMITS.listSectionTitleMaxLength + 1),
+          rows: [{ id: 'r', title: 'One' }],
+        },
       ],
     })
     expect(res.ok).toBe(false)

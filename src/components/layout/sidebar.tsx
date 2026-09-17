@@ -15,6 +15,7 @@ import {
   GitBranch,
   LayoutDashboard,
   LogOut,
+  Megaphone,
   MessageSquare,
   Radio,
   Settings,
@@ -97,8 +98,9 @@ const navItems: NavItem[] = [
   { href: "/contacts", labelKey: "contacts", icon: Users },
   { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },
   { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
+  { href: "/campaigns", labelKey: "campaigns", icon: Megaphone },
   { href: "/automations", labelKey: "automations", icon: Zap },
-  { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
+  { href: "/flows", labelKey: "flows", icon: Workflow },
   { href: "/agents", labelKey: "aiAgents", icon: Bot },
 ];
 

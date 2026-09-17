@@ -41,6 +41,7 @@ interface MetaTemplateComponent {
   example?: {
     header_text?: string[]
     header_handle?: string[]
+    header_url?: string[]
     body_text?: string[][]
   }
 }
@@ -127,6 +128,33 @@ function extractSampleValues(
   return sv
 }
 
+function isHttpUrl(value: string | undefined): value is string {
+  if (!value) return false
+  try {
+    const u = new URL(value)
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Send-time IMAGE/VIDEO/DOCUMENT headers need a public URL. Meta's
+ * GET templates payload usually only returns `example.header_handle`
+ * (a creation-time resumable upload handle, not reusable at send).
+ * When it does return a URL — `header_url`, or a handle that is
+ * already an http(s) link — keep it as `header_media_url`.
+ */
+function extractHeaderMediaUrl(
+  header: MetaTemplateComponent | undefined,
+): string | null {
+  const fromUrl = header?.example?.header_url?.[0]
+  if (isHttpUrl(fromUrl)) return fromUrl
+  const fromHandle = header?.example?.header_handle?.[0]
+  if (isHttpUrl(fromHandle)) return fromHandle
+  return null
+}
+
 export async function POST() {
   try {
     // Syncing rewrites the account-wide template catalog, which is
@@ -207,6 +235,7 @@ export async function POST() {
 
       const parsedButtons = parseButtons(buttons?.buttons)
       const sampleValues = extractSampleValues(body, header)
+      const headerMediaUrl = extractHeaderMediaUrl(header)
 
       const headerFormat = header?.format?.toUpperCase()
       const headerType =
@@ -217,7 +246,7 @@ export async function POST() {
           ? headerFormat.toLowerCase()
           : null
 
-      const row = {
+      const row: Record<string, unknown> = {
         // Account tenancy + user audit, same split as the submit
         // route. account_id is NOT NULL on message_templates
         // post-017, so an INSERT without it errors.
@@ -237,6 +266,11 @@ export async function POST() {
         meta_template_id: t.id,
         quality_score: normalizeQualityScore(t.quality_score),
         updated_at: new Date().toISOString(),
+      }
+      // Only write header_media_url when Meta gave us a real URL so a
+      // re-sync does not wipe a URL the user already stored locally.
+      if (headerMediaUrl) {
+        row.header_media_url = headerMediaUrl
       }
 
       const { data: existing, error: lookupErr } = await supabase

@@ -9,9 +9,7 @@ import { getFlowTemplate } from '@/lib/flows/templates'
  * POST /api/flows — create a new (draft) flow.
  *
  * Available to every authenticated user. The previous per-account
- * beta gate was removed when Flows went to soft-GA; the UI still
- * shows a "Beta" label so users know the surface is young, but the
- * routes themselves are open.
+ * beta gate was removed when Flows went generally available.
  */
 
 async function requireUser(): Promise<

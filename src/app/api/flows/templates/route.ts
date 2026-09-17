@@ -10,7 +10,7 @@ import { listFlowTemplates } from '@/lib/flows/templates'
  * without bundling the full template payloads client-side. Bodies
  * are fetched only on actual clone via POST /api/flows.
  *
- * Available to any signed-in user. Flows is in soft-GA.
+ * Available to any signed-in user.
  */
 export async function GET() {
   const supabase = await createClient()

@@ -98,7 +98,10 @@ export function canViewOnly(role: AccountRole): boolean {
   return role === "viewer";
 }
 
-/** Owner only: irreversible destructive operations. */
+/** Owner / admin: export campaign entries and share client reports. */
+export function canExportCampaigns(role: AccountRole): boolean {
+  return hasMinRole(role, "admin");
+}
 export function canDeleteAccount(role: AccountRole): boolean {
   return role === "owner";
 }

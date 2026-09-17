@@ -12,15 +12,15 @@ export const TRIGGER_META: Record<AutomationTriggerType, TriggerMeta> = {
     pillClass: 'border-blue-500/30 bg-blue-500/10 text-blue-300',
   },
   first_inbound_message: {
-    label: 'First Message from Contact',
+    label: 'Conversation Started',
     pillClass: 'border-teal-500/30 bg-teal-500/10 text-teal-300',
   },
   keyword_match: {
-    label: 'Keyword Match',
+    label: 'Keyword Detected',
     pillClass: 'border-purple-500/30 bg-purple-500/10 text-purple-300',
   },
   new_contact_created: {
-    label: 'New Contact',
+    label: 'Contact Created',
     pillClass: 'border-primary/30 bg-primary/10 text-primary',
   },
   conversation_assigned: {
@@ -32,12 +32,24 @@ export const TRIGGER_META: Record<AutomationTriggerType, TriggerMeta> = {
     pillClass: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
   },
   time_based: {
-    label: 'Time-Based',
+    label: 'Scheduled Trigger',
     pillClass: 'border-slate-500/30 bg-slate-500/10 text-muted-foreground',
   },
   interactive_reply: {
     label: 'Button / List Reply',
     pillClass: 'border-pink-500/30 bg-pink-500/10 text-pink-300',
+  },
+  deal_created: {
+    label: 'Deal Created',
+    pillClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  },
+  deal_stage_changed: {
+    label: 'Deal Stage Changed',
+    pillClass: 'border-lime-500/30 bg-lime-500/10 text-lime-300',
+  },
+  campaign_entry: {
+    label: 'Campaign Entry',
+    pillClass: 'border-violet-500/30 bg-violet-500/10 text-violet-300',
   },
 }
 

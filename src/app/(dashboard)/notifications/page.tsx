@@ -15,6 +15,7 @@ import { toast } from "sonner";
 // (conversation_assigned) but this keeps future types a one-line add.
 const TYPE_ICON: Record<Notification["type"], typeof Bell> = {
   conversation_assigned: UserPlus,
+  automation_notify: Bell,
 };
 
 export default function NotificationsPage() {

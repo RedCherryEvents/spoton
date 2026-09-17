@@ -10,7 +10,11 @@ const h = vi.hoisted(() => ({
   engineSendText: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
-    autoResponders: [] as { id: string }[],
+    autoResponders: [] as {
+      id: string
+      trigger_type: string
+      trigger_config?: Record<string, unknown>
+    }[],
     claim: true as boolean,
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
@@ -22,16 +26,22 @@ vi.mock('./context', () => ({ buildConversationContext: h.buildConversationConte
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
+vi.mock('@/lib/automations/engine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/automations/engine')>()
+  return {
+    ...actual,
+    runAutomationsForTrigger: vi.fn(async () => undefined),
+  }
+})
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
       if (table === 'automations') {
-        // .select().eq().eq().in().limit() → active auto-responders
+        // .select().eq().eq().in() → active message-level automations
         const chain = {
           select: () => chain,
           eq: () => chain,
-          in: () => chain,
-          limit: () =>
+          in: () =>
             Promise.resolve({ data: h.state.autoResponders, error: null }),
         }
         return chain
@@ -120,11 +130,38 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(systemPrompt).toContain('Returns accepted within 30 days.')
   })
 
-  it('stands down when an active message-level automation exists', async () => {
-    h.state.autoResponders = [{ id: 'auto-1' }]
+  it('stands down when an active new_message_received automation exists', async () => {
+    h.state.autoResponders = [
+      { id: 'auto-1', trigger_type: 'new_message_received' },
+    ]
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('stands down when a keyword_match automation matches this message', async () => {
+    h.state.autoResponders = [
+      {
+        id: 'kw-1',
+        trigger_type: 'keyword_match',
+        trigger_config: { keywords: ['STOP'], match_type: 'contains' },
+      },
+    ]
+    await dispatchInboundToAiReply({ ...ARGS, messageText: 'please STOP' })
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('still replies when a keyword_match automation does not match this message', async () => {
+    h.state.autoResponders = [
+      {
+        id: 'kw-1',
+        trigger_type: 'keyword_match',
+        trigger_config: { keywords: ['STOP'], match_type: 'contains' },
+      },
+    ]
+    await dispatchInboundToAiReply({ ...ARGS, messageText: 'hello' })
+    expect(h.engineSendText).toHaveBeenCalled()
   })
 
   it('does not send when the atomic slot claim loses the race', async () => {

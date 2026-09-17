@@ -54,6 +54,7 @@ import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
 import { renderTemplateBody } from "@/lib/whatsapp/template-body";
 import { toast } from "sonner";
+import { dispatchClientTrigger } from "@/lib/automations/client-dispatch";
 
 interface ReplyDraft {
   id: string;
@@ -700,6 +701,7 @@ export function MessageThread({
             template_message_params: {
               body: values.body,
               headerText: values.headerText,
+              headerMediaUrl: values.headerMediaUrl,
               buttonParams: values.buttonParams,
             },
             template_params: values.body,
@@ -856,8 +858,18 @@ export function MessageThread({
       }
 
       onAssignChange(conversation.id, agentId);
+      if (agentId) {
+        void dispatchClientTrigger({
+          triggerType: "conversation_assigned",
+          contactId: conversation.contact_id ?? contact?.id ?? null,
+          context: {
+            agent_id: agentId,
+            conversation_id: conversation.id,
+          },
+        });
+      }
     },
-    [conversation, onAssignChange],
+    [conversation, onAssignChange, contact?.id],
   );
 
   // Empty state — same WhatsApp-style doodle background as the active

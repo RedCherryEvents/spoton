@@ -24,6 +24,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
+import { runAutomationsForTrigger } from '@/lib/automations/engine';
 
 export interface ResolvedConversation {
   conversationId: string;
@@ -133,6 +134,12 @@ export async function resolveConversationByPhone(
     } else {
       contactId = created.id;
       contactCreated = true;
+      await runAutomationsForTrigger({
+        accountId,
+        triggerType: 'new_contact_created',
+        contactId,
+        context: {},
+      })
     }
   }
 

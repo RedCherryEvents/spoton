@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { dispatchClientTrigger } from '@/lib/automations/client-dispatch';
 
 interface ContactFormProps {
   open: boolean;
@@ -176,6 +177,10 @@ export function ContactForm({
           .single();
         if (error) throw error;
         contactId = data.id;
+        void dispatchClientTrigger({
+          triggerType: 'new_contact_created',
+          contactId,
+        });
       }
 
       // Sync tags

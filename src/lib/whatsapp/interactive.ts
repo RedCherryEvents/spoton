@@ -182,19 +182,37 @@ export function validateInteractivePayload(
     }
     const seen = new Set<string>()
     let total = 0
+    const multipleSections = list.sections.length > 1
     for (const section of list.sections) {
-      if (!section || !Array.isArray(section.rows)) {
-        return fail('Every list section needs rows.')
+      if (!section || !Array.isArray(section.rows) || section.rows.length < 1) {
+        return fail('Every list section needs at least one row.')
+      }
+      const sectionTitle = (section.title ?? '').trim()
+      if (multipleSections && !sectionTitle) {
+        return fail(
+          'Every section needs a title when a list has more than one section.',
+        )
+      }
+      if (sectionTitle.length > INTERACTIVE_LIMITS.listSectionTitleMaxLength) {
+        return fail(
+          `List section title exceeds the ${INTERACTIVE_LIMITS.listSectionTitleMaxLength}-character limit.`,
+        )
       }
       for (const row of section.rows) {
         total++
         if (!row || typeof row.id !== 'string' || row.id.trim() === '') {
           return fail('Every list row needs an id.')
         }
-        if (seen.has(row.id)) {
-          return fail(`Duplicate list row id "${row.id}".`)
+        const rowId = row.id.trim()
+        if (rowId.length > INTERACTIVE_LIMITS.listRowIdMaxLength) {
+          return fail(
+            `List row id exceeds the ${INTERACTIVE_LIMITS.listRowIdMaxLength}-character limit.`,
+          )
         }
-        seen.add(row.id)
+        if (seen.has(rowId)) {
+          return fail(`Duplicate list row id "${rowId}".`)
+        }
+        seen.add(rowId)
         if (typeof row.title !== 'string' || row.title.trim() === '') {
           return fail('Every list row needs a title.')
         }

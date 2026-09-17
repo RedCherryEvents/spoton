@@ -2,8 +2,8 @@
  * Flow runner.
  *
  * The single entry point `dispatchInboundToFlows` is called by the
- * WhatsApp webhook on every inbound message *for an account that has
- * opted into the Flows beta*. It decides whether the message belongs
+ * WhatsApp webhook on every inbound message. It decides whether the
+ * message belongs
  * to an active conversation flow (advance it) or matches the entry
  * trigger of an active flow (start a new run) — and reports back to
  * the webhook so the webhook knows whether to also fire automations.

@@ -309,13 +309,27 @@ function ListEditor({
           : s,
       ),
     });
-  const removeRow = (sIdx: number, rIdx: number) =>
+  const removeRow = (sIdx: number, rIdx: number) => {
+    const section = sections[sIdx]
+    // Meta rejects a section with zero rows (#131009). Dropping the
+    // last row of a section removes the section instead (when another
+    // section remains) rather than leaving an empty one in the payload.
+    if (section.rows.length <= 1) {
+      if (sections.length > 1) {
+        onChange({
+          ...value,
+          sections: sections.filter((_, i) => i !== sIdx),
+        })
+      }
+      return
+    }
     onChange({
       ...value,
       sections: sections.map((s, i) =>
         i === sIdx ? { ...s, rows: s.rows.filter((_, j) => j !== rIdx) } : s,
       ),
-    });
+    })
+  }
   const addSection = () =>
     onChange({
       ...value,
@@ -347,10 +361,19 @@ function ListEditor({
           <div className="mb-2 flex items-center gap-2">
             <Input
               value={section.title ?? ""}
+              maxLength={INTERACTIVE_LIMITS.listSectionTitleMaxLength}
               onChange={(e) => updateSection(sIdx, { title: e.target.value })}
-              placeholder="Section title (optional)"
+              placeholder={
+                sections.length > 1
+                  ? "Section title (required)"
+                  : "Section title (optional)"
+              }
               className="flex-1 bg-muted text-xs"
             />
+            <span className="w-10 shrink-0 text-right text-[10px] text-muted-foreground">
+              {(section.title ?? "").length}/
+              {INTERACTIVE_LIMITS.listSectionTitleMaxLength}
+            </span>
             {sections.length > 1 && (
               <Button
                 variant="ghost"
