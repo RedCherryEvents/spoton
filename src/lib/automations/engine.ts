@@ -41,7 +41,7 @@ import { supabaseAdmin } from './admin-client'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive, engineSendMedia } from './meta-send'
-import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
+import { validateInteractivePayload, type InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 import {
   addCampaignEntry,
@@ -194,6 +194,8 @@ export async function tryResumeInboundWait(args: {
   contactId: string
   conversationId?: string
   messageText: string
+  /** Set when the inbound is a button / list-row tap. */
+  interactiveReplyId?: string | null
 }): Promise<boolean> {
   const db = supabaseAdmin()
   const { data: row, error } = await db
@@ -225,7 +227,13 @@ export async function tryResumeInboundWait(args: {
   const ctx = (row.context ?? {}) as AutomationContext
   const expectKey = typeof row.expect_var_key === 'string' ? row.expect_var_key : null
   const nextVars = { ...(ctx.vars ?? {}) }
-  if (expectKey) nextVars[expectKey] = args.messageText
+  if (expectKey) {
+    // Title (or typed text) under the key; the tapped option's id under
+    // `<key>_id` so conditions can match it exactly.
+    nextVars[expectKey] = args.messageText
+    if (args.interactiveReplyId) nextVars[`${expectKey}_id`] = args.interactiveReplyId
+    else delete nextVars[`${expectKey}_id`]
+  }
 
   await resumePendingExecution({
     id: row.id as string,
@@ -240,6 +248,7 @@ export async function tryResumeInboundWait(args: {
     context: {
       ...ctx,
       message_text: args.messageText,
+      interactive_reply_id: args.interactiveReplyId ?? undefined,
       conversation_id: args.conversationId ?? ctx.conversation_id,
       vars: nextVars,
     },
@@ -325,6 +334,16 @@ async function resolveScheduleAudience(
     return (joins ?? []).map((r) => r.contact_id as string).filter(Boolean)
   }
   return []
+}
+
+/**
+ * End a reply wait (ask_question / wait_for_reply / validate retry)
+ * whose timeout passed with no answer. The run stops there rather than
+ * continuing as if the customer had replied.
+ */
+export async function expireReplyWait(pending: { id: string; log_id: string | null }): Promise<void> {
+  await markPending(pending.id, 'failed')
+  await finalizeLog(pending.log_id, 'failed', 'no reply before the wait timed out')
 }
 
 /**
@@ -522,37 +541,61 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
       return
     }
 
-    if (step.step_type === 'ask_question') {
-      const cfg = step.step_config as AskQuestionStepConfig
-      if (!args.contactId) throw new Error('ask_question needs a contact')
-      const text = interpolate(cfg.text, args)
-      if (!text.trim()) throw new Error('ask_question has empty text')
-      const conversationId = await resolveConversationId(args)
-      const { whatsapp_message_id } = await engineSendText({
-        accountId: args.automation.account_id,
-        userId: args.automation.user_id,
-        conversationId,
-        contactId: args.contactId,
-        text,
-      })
-      const hours = typeof cfg.timeout_hours === 'number' && cfg.timeout_hours > 0
-        ? cfg.timeout_hours
-        : 48
+    // `ask_question`, and `send_buttons` / `send_list` with
+    // `wait_for_reply`, send and then park until the customer answers.
+    // The inbound webhook resumes the run via tryResumeInboundWait.
+    const replyWait = replyWaitFor(step)
+    if (replyWait) {
+      let detail: string
+      try {
+        detail = step.step_type === 'ask_question'
+          ? await sendQuestion(step.step_config as AskQuestionStepConfig, args)
+          : await runStep(step, args)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        results.push({ step_id: step.id, step_type: step.step_type, status: 'failed', detail: msg })
+        status = 'failed'
+        errorMessage = msg
+        break
+      }
       await parkPending(args, step, {
         waitKind: 'inbound_reply',
-        runAt: new Date(Date.now() + hours * 3_600_000),
-        expectVarKey: cfg.var_key || 'answer',
-        detail: `asked (${whatsapp_message_id})`,
+        runAt: new Date(Date.now() + replyWait.timeoutHours * 3_600_000),
+        expectVarKey: replyWait.varKey,
+        detail,
       })
       results.push({
         step_id: step.id,
         step_type: step.step_type,
         status: 'success',
-        detail: `asked via Meta (${whatsapp_message_id}); waiting for reply`,
+        detail: `${detail}; waiting for reply`,
       })
       status = 'partial'
       await appendResults(args.logId, results, status, errorMessage)
       return
+    }
+
+    // A `validate` set to retry re-asks instead of failing the run:
+    // send the retry text, park a reply wait into the same var, and
+    // resume AT this step so the new answer is checked again.
+    if (step.step_type === 'validate') {
+      const cfg = step.step_config as ValidateStepConfig
+      let retry: string | null
+      try {
+        retry = await maybeRetryValidation(cfg, step, args)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        results.push({ step_id: step.id, step_type: 'validate', status: 'failed', detail: msg })
+        status = 'failed'
+        errorMessage = msg
+        break
+      }
+      if (retry) {
+        results.push({ step_id: step.id, step_type: 'validate', status: 'success', detail: retry })
+        status = 'partial'
+        await appendResults(args.logId, results, status, errorMessage)
+        return
+      }
     }
 
     try {
@@ -678,7 +721,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 
     case 'send_buttons':
     case 'send_list': {
-      const payload = step.step_config as SendButtonsStepConfig | SendListStepConfig
+      const payload = withoutReplyWait(step.step_config as SendButtonsStepConfig | SendListStepConfig)
       if (!args.contactId) throw new Error(`${step.step_type} needs a contact`)
       // Validate against Meta's limits before the network call so a bad
       // payload surfaces as a clear failed-step detail rather than a raw
@@ -1008,6 +1051,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!passesValidation(cfg.rule, raw, cfg.pattern)) {
         throw new Error(`validate failed: ${cfg.var_key} (${cfg.rule})`)
       }
+      if (args.context.vars) delete args.context.vars[attemptsVarKey(cfg.var_key)]
       if (args.context.entry?.id) {
         await appendCampaignEntryEvent({
           accountId: args.automation.account_id,
@@ -1382,6 +1426,100 @@ function interpolate(s: string, args: ExecuteArgs): string {
   return interpolateTemplate(s, args.context)
 }
 
+// ------------------------------------------------------------
+// Reply waits — ask_question, send_buttons / send_list with
+// wait_for_reply, and validate's retry
+// ------------------------------------------------------------
+
+const DEFAULT_REPLY_WAIT_HOURS = 48
+const DEFAULT_VALIDATE_ATTEMPTS = 3
+const DEFAULT_RETRY_TEXT = "Sorry, that answer isn't valid. Please try again."
+
+/** Wait settings when `step` pauses for the customer's reply, else null. */
+function replyWaitFor(step: AutomationStep): { varKey: string; timeoutHours: number } | null {
+  if (step.step_type === 'ask_question') {
+    const cfg = step.step_config as AskQuestionStepConfig
+    return { varKey: cfg.var_key || 'answer', timeoutHours: positiveOr(cfg.timeout_hours, DEFAULT_REPLY_WAIT_HOURS) }
+  }
+  if (step.step_type === 'send_buttons' || step.step_type === 'send_list') {
+    const cfg = step.step_config as SendButtonsStepConfig | SendListStepConfig
+    if (!cfg.wait_for_reply) return null
+    return { varKey: cfg.var_key || 'answer', timeoutHours: positiveOr(cfg.timeout_hours, DEFAULT_REPLY_WAIT_HOURS) }
+  }
+  return null
+}
+
+function withoutReplyWait(cfg: SendButtonsStepConfig | SendListStepConfig): InteractiveMessagePayload {
+  const payload: Partial<SendButtonsStepConfig | SendListStepConfig> = { ...cfg }
+  delete payload.wait_for_reply
+  delete payload.var_key
+  delete payload.timeout_hours
+  return payload as InteractiveMessagePayload
+}
+
+async function sendQuestion(cfg: AskQuestionStepConfig, args: ExecuteArgs): Promise<string> {
+  if (!args.contactId) throw new Error('ask_question needs a contact')
+  const text = interpolate(cfg.text, args)
+  if (!text.trim()) throw new Error('ask_question has empty text')
+  const conversationId = await resolveConversationId(args)
+  const { whatsapp_message_id } = await engineSendText({
+    accountId: args.automation.account_id,
+    userId: args.automation.user_id,
+    conversationId,
+    contactId: args.contactId,
+    text,
+  })
+  return `asked via Meta (${whatsapp_message_id})`
+}
+
+/**
+ * For a `validate` step set to retry whose value fails: send the retry
+ * text and park a reply wait that resumes AT this step, so the new
+ * answer is checked again. Returns the log detail when it parked, or
+ * null when the step should just run — value valid, retry off, or
+ * attempts used up (runStep then fails it exactly like `stop`).
+ */
+async function maybeRetryValidation(
+  cfg: ValidateStepConfig,
+  step: AutomationStep,
+  args: ExecuteArgs,
+): Promise<string | null> {
+  if (cfg.on_invalid !== 'retry' || !cfg.var_key || !args.contactId) return null
+  const raw = String(args.context.vars?.[cfg.var_key] ?? '')
+  if (passesValidation(cfg.rule, raw, cfg.pattern)) return null
+
+  const counterKey = attemptsVarKey(cfg.var_key)
+  const attempt = Number(args.context.vars?.[counterKey] ?? 1)
+  const maxAttempts = positiveOr(cfg.max_attempts, DEFAULT_VALIDATE_ATTEMPTS)
+  if (attempt >= maxAttempts) return null
+
+  const conversationId = await resolveConversationId(args)
+  const { whatsapp_message_id } = await engineSendText({
+    accountId: args.automation.account_id,
+    userId: args.automation.user_id,
+    conversationId,
+    contactId: args.contactId,
+    text: interpolate(cfg.retry_text?.trim() || DEFAULT_RETRY_TEXT, args),
+  })
+  args.context.vars = { ...(args.context.vars ?? {}), [counterKey]: attempt + 1 }
+  await parkPending(args, step, {
+    waitKind: 'inbound_reply',
+    runAt: new Date(Date.now() + DEFAULT_REPLY_WAIT_HOURS * 3_600_000),
+    expectVarKey: cfg.var_key,
+    resumePosition: step.position,
+  })
+  return `invalid ${cfg.var_key} (${cfg.rule}); asked again via Meta (${whatsapp_message_id}), attempt ${attempt + 1} of ${maxAttempts}; waiting for reply`
+}
+
+/** Per-var retry counter for validate, kept in the run's vars. */
+function attemptsVarKey(varKey: string): string {
+  return `${varKey}_attempts`
+}
+
+function positiveOr(n: unknown, fallback: number): number {
+  return typeof n === 'number' && n > 0 ? n : fallback
+}
+
 function passesValidation(
   rule: ValidateStepConfig['rule'],
   value: string,
@@ -1418,6 +1556,8 @@ async function parkPending(
     runAt: Date
     expectVarKey?: string
     detail?: string
+    /** Position to resume at. Defaults to the step after `step`. */
+    resumePosition?: number
   },
 ): Promise<void> {
   const db = supabaseAdmin()
@@ -1438,7 +1578,7 @@ async function parkPending(
     log_id: args.logId,
     parent_step_id: args.parentStepId,
     branch: args.branch,
-    next_step_position: step.position + 1,
+    next_step_position: opts.resumePosition ?? step.position + 1,
     context: args.context,
     run_at: opts.runAt.toISOString(),
     status: 'pending',

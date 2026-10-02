@@ -13,6 +13,8 @@ const h = vi.hoisted(() => ({
     upsertCalls: [] as { table: string; payload: unknown }[],
     logInserts: [] as Record<string, unknown>[],
     logUpdates: [] as Record<string, unknown>[],
+    pendingInserts: [] as Record<string, unknown>[],
+    pendingRow: null as Record<string, unknown> | null,
   },
 }));
 
@@ -24,8 +26,21 @@ vi.mock("./admin-client", () => {
     type: string;
     payload?: unknown;
     filters: [string, string, unknown][];
+    single?: boolean;
   }) {
     const { table, type } = ops;
+    if (table === "automation_pending_executions") {
+      if (type === "insert") {
+        state.pendingInserts.push(ops.payload as Record<string, unknown>);
+        return { data: null, error: null };
+      }
+      // claim (update … select id) and lookup both read the parked row
+      if (type === "update") return { data: state.pendingRow ? { id: state.pendingRow.id } : null, error: null };
+      return { data: state.pendingRow, error: null };
+    }
+    if (table === "automations" && ops.single) {
+      return { data: state.automations[0] ?? null, error: null };
+    }
     if (table === "contacts") {
       if (type === "update") {
         state.updateCalls.push({ table, filters: ops.filters });
@@ -57,7 +72,13 @@ vi.mock("./admin-client", () => {
       }
       return { data: { steps_executed: [], status: "success" }, error: null };
     }
-    if (table === "automation_steps") return { data: state.steps, error: null };
+    if (table === "automation_steps") {
+      // honour executeStepsFrom's `.gte('position', start)` so a resumed
+      // run starts after the parked step
+      const gte = ops.filters.find(([op, k]) => op === "gte" && k === "position");
+      const from = gte ? Number(gte[2]) : -Infinity;
+      return { data: state.steps.filter((s) => Number(s.position) >= from), error: null };
+    }
     return { data: null, error: null };
   }
 
@@ -75,14 +96,14 @@ vi.mock("./admin-client", () => {
       delete: () => ((ops.type = "delete"), b),
       upsert: (p: unknown) => ((ops.type = "upsert"), (ops.payload = p), b),
       eq: (k: string, v: unknown) => (ops.filters.push(["eq", k, v]), b),
-      gte: () => b,
+      gte: (k: string, v: unknown) => (ops.filters.push(["gte", k, v]), b),
       lte: () => b,
       in: () => b,
       is: () => b,
       order: () => b,
       limit: () => b,
-      single: () => Promise.resolve(resolve(ops)),
-      maybeSingle: () => Promise.resolve(resolve(ops)),
+      single: () => Promise.resolve(resolve({ ...ops, single: true })),
+      maybeSingle: () => Promise.resolve(resolve({ ...ops, single: true })),
       then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
         Promise.resolve(resolve(ops)).then(onF, onR),
     };
@@ -107,7 +128,13 @@ vi.mock("./meta-send", () => ({
   engineSendMedia: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
 }));
 
-import { runAutomationsForTrigger, triggerMatches, interpolateTemplate } from "./engine";
+import {
+  runAutomationsForTrigger,
+  triggerMatches,
+  interpolateTemplate,
+  tryResumeInboundWait,
+} from "./engine";
+import { engineSendText, engineSendInteractive } from "./meta-send";
 import type { Automation, KeywordMatchTriggerConfig } from "@/types";
 
 const ACCOUNT = "acct-1";
@@ -122,6 +149,8 @@ beforeEach(() => {
   h.state.upsertCalls = [];
   h.state.logInserts = [];
   h.state.logUpdates = [];
+  h.state.pendingInserts = [];
+  h.state.pendingRow = null;
 });
 
 describe("runAutomationsForTrigger — tenant isolation", () => {
@@ -599,5 +628,183 @@ describe("interpolateTemplate", () => {
 
   it("replaces unknown tokens with empty string", () => {
     expect(interpolateTemplate("x{{ missing.y }}z", {})).toBe("xz");
+  });
+});
+
+// ------------------------------------------------------------
+// Reply waits: send_list / send_buttons `wait_for_reply` + validate retry
+// ------------------------------------------------------------
+
+function messageTrigger() {
+  return {
+    id: "a1",
+    account_id: ACCOUNT,
+    user_id: "u1",
+    name: "quiz",
+    trigger_type: "new_message_received",
+    trigger_config: {},
+    is_active: true,
+  };
+}
+
+function step(position: number, step_type: string, step_config: Record<string, unknown>) {
+  return { id: `s${position}`, automation_id: "a1", step_type, position, parent_step_id: null, step_config };
+}
+
+const LIST = {
+  kind: "list",
+  body: "Who's your pick?",
+  button_label: "Choose",
+  sections: [{ rows: [{ id: "team_a", title: "Team A" }, { id: "team_b", title: "Team B" }] }],
+};
+
+describe("send_list — wait_for_reply", () => {
+  it("parks after the send and does not run the next step", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [
+      step(0, "send_list", { ...LIST, wait_for_reply: true, var_key: "pick" }),
+      step(1, "send_message", { text: "should wait" }),
+    ];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "WINICC2027", conversation_id: "conv1" },
+    });
+
+    // The wait keys never reach Meta.
+    const sent = vi.mocked(engineSendInteractive).mock.calls[0][0].payload;
+    expect(sent).not.toHaveProperty("wait_for_reply");
+    expect(sent).not.toHaveProperty("var_key");
+    expect(sent.body).toBe("Who's your pick?");
+
+    expect(h.state.pendingInserts).toEqual([
+      expect.objectContaining({ wait_kind: "inbound_reply", expect_var_key: "pick", next_step_position: 1 }),
+    ]);
+    expect(engineSendText).not.toHaveBeenCalled();
+  });
+
+  it("runs straight through when wait_for_reply is off", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [step(0, "send_list", LIST), step(1, "send_message", { text: "next" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "hi", conversation_id: "conv1" },
+    });
+
+    expect(h.state.pendingInserts).toEqual([]);
+    expect(engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: "next" }));
+  });
+
+  it("resumes on the tap with the option title and id in vars", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [
+      step(0, "send_list", { ...LIST, wait_for_reply: true, var_key: "pick" }),
+      step(1, "send_message", { text: "{{ vars.pick }} / {{ vars.pick_id }}" }),
+    ];
+    h.state.pendingRow = {
+      id: "p1",
+      automation_id: "a1",
+      account_id: ACCOUNT,
+      user_id: "u1",
+      contact_id: "c1",
+      log_id: "log1",
+      parent_step_id: null,
+      branch: null,
+      next_step_position: 1,
+      expect_var_key: "pick",
+      context: { conversation_id: "conv1", vars: {} },
+    };
+
+    const consumed = await tryResumeInboundWait({
+      accountId: ACCOUNT,
+      contactId: "c1",
+      conversationId: "conv1",
+      messageText: "Team B",
+      interactiveReplyId: "team_b",
+    });
+
+    expect(consumed).toBe(true);
+    expect(engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: "Team B / team_b" }));
+  });
+});
+
+describe("validate — on_invalid retry", () => {
+  const validate = (extra: Record<string, unknown> = {}) =>
+    step(0, "validate", {
+      var_key: "answer",
+      rule: "regex",
+      pattern: "^[A-Da-d]$",
+      on_invalid: "retry",
+      retry_text: "Please reply A, B, C or D.",
+      max_attempts: 3,
+      ...extra,
+    });
+
+  it("asks again and parks AT the validate step when the answer is invalid", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [validate(), step(1, "send_message", { text: "after" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "maybe", conversation_id: "conv1", vars: { answer: "maybe" } },
+    });
+
+    expect(engineSendText).toHaveBeenCalledTimes(1);
+    expect(engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: "Please reply A, B, C or D." }));
+    expect(h.state.pendingInserts).toEqual([
+      expect.objectContaining({
+        wait_kind: "inbound_reply",
+        expect_var_key: "answer",
+        next_step_position: 0,
+        context: expect.objectContaining({ vars: expect.objectContaining({ answer_attempts: 2 }) }),
+      }),
+    ]);
+  });
+
+  it("continues to the next step once the answer is valid", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [validate(), step(1, "send_message", { text: "after" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "B", conversation_id: "conv1", vars: { answer: "B", answer_attempts: 2 } },
+    });
+
+    expect(h.state.pendingInserts).toEqual([]);
+    expect(engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: "after" }));
+  });
+
+  it("fails like `stop` once the attempts are used up", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [validate(), step(1, "send_message", { text: "after" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "nope", conversation_id: "conv1", vars: { answer: "nope", answer_attempts: 3 } },
+    });
+
+    expect(engineSendText).not.toHaveBeenCalled();
+    expect(h.state.pendingInserts).toEqual([]);
+    expect(h.state.logUpdates).toContainEqual(expect.objectContaining({
+      status: "failed",
+      error_message: "validate failed: answer (regex)",
+    }));
   });
 });

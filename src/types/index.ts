@@ -563,8 +563,23 @@ export interface SendMessageStepConfig {
  * payload (same shape stored on messages + quick replies). `kind` is
  * implied by the step_type but kept on the payload for a uniform shape.
  */
-export type SendButtonsStepConfig = InteractiveMessagePayload;
-export type SendListStepConfig = InteractiveMessagePayload;
+export type SendButtonsStepConfig = InteractiveMessagePayload & AwaitReplyOptions;
+export type SendListStepConfig = InteractiveMessagePayload & AwaitReplyOptions;
+
+/**
+ * Optional pause on `send_buttons` / `send_list`. When `wait_for_reply`
+ * is on, the run parks after the send (like `ask_question`) and resumes
+ * on the customer's next inbound: `vars[var_key]` gets the tapped
+ * option's title (or the typed text) and `vars[var_key + '_id']` the
+ * tapped option's id. Stripped from the payload before it goes to Meta.
+ */
+export interface AwaitReplyOptions {
+  wait_for_reply?: boolean;
+  /** Defaults to `answer`. */
+  var_key?: string;
+  /** Hours before the wait expires. Defaults to 48. */
+  timeout_hours?: number;
+}
 
 export interface SendTemplateStepConfig {
   template_name: string;
@@ -631,6 +646,15 @@ export interface ValidateStepConfig {
   var_key: string;
   rule: 'required' | 'email' | 'phone' | 'number' | 'regex';
   pattern?: string;
+  /**
+   * `stop` (default) fails the run on an invalid value. `retry` sends
+   * `retry_text`, waits for a new reply into `var_key`, and re-checks —
+   * up to `max_attempts` answers in total, after which it fails as `stop`.
+   */
+  on_invalid?: 'stop' | 'retry';
+  retry_text?: string;
+  /** Total answers allowed, including the first. Defaults to 3. */
+  max_attempts?: number;
 }
 
 export interface AddNoteStepConfig {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { authorizeCron } from '@/lib/cron-auth'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { resumePendingExecution, fireTimeBasedAutomations } from '@/lib/automations/engine'
+import { resumePendingExecution, fireTimeBasedAutomations, expireReplyWait } from '@/lib/automations/engine'
 import type { AutomationContext } from '@/lib/automations/engine'
 
 /**
@@ -27,10 +27,12 @@ export async function GET(request: Request) {
     .limit(50)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  if (!due || due.length === 0) return NextResponse.json({ processed: 0 })
 
+  // No early return when nothing is due: time-based automations below
+  // must fire on every tick, not only when a wait happens to be due.
   let processed = 0
-  for (const row of due) {
+  let expired = 0
+  for (const row of due ?? []) {
     const { data: claim } = await admin
       .from('automation_pending_executions')
       .update({ status: 'running' })
@@ -39,6 +41,15 @@ export async function GET(request: Request) {
       .select('id')
       .maybeSingle()
     if (!claim) continue
+
+    // A due reply wait means the customer never answered — the inbound
+    // webhook resumes answered ones. End the run instead of continuing
+    // as if they had replied.
+    if (row.wait_kind === 'inbound_reply') {
+      await expireReplyWait({ id: row.id as string, log_id: (row.log_id as string | null) ?? null })
+      expired++
+      continue
+    }
 
     await resumePendingExecution({
       id: row.id as string,
@@ -59,5 +70,5 @@ export async function GET(request: Request) {
 
   const scheduled = await fireTimeBasedAutomations()
 
-  return NextResponse.json({ processed, scheduled })
+  return NextResponse.json({ processed, expired, scheduled })
 }

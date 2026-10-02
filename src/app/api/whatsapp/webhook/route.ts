@@ -817,6 +817,7 @@ async function processMessage(
         contactId: contactRecord.id,
         conversationId: conversation.id,
         messageText: inboundText,
+        interactiveReplyId,
       }).catch((err) => {
         console.error('[automations] inbound wait resume failed:', err)
         return false

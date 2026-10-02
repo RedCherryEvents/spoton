@@ -1520,7 +1520,13 @@ function StepRenderer({
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                {isBranching ? t("cardKind.branch") : step.step_type === "wait" || step.step_type === "ask_question" ? t("cardKind.wait") : t("cardKind.action")}
+                {isBranching
+                  ? t("cardKind.branch")
+                  : step.step_type === "wait" ||
+                      step.step_type === "ask_question" ||
+                      step.step_config.wait_for_reply === true
+                    ? t("cardKind.wait")
+                    : t("cardKind.action")}
               </div>
               <div className="truncate text-sm font-medium text-foreground">{t(`steps.${meta.label}`)}</div>
               <div className="truncate text-[11px] text-muted-foreground">{previewFor(step)}</div>
@@ -1726,15 +1732,58 @@ function StepEditor({
       )
     case "send_buttons":
     case "send_list":
-      // The whole step_config IS the interactive payload; the shared
-      // builder edits it in place (and enforces Meta's limits + preview).
+      // The step_config is the interactive payload plus the optional
+      // wait-for-reply keys. The shared builder only knows the payload,
+      // so carry the wait keys across each of its edits.
       return (
-        <InteractiveBuilder
-          value={asInteractive(cfg)}
-          onChange={(payload) =>
-            onChange({ ...step, step_config: toStepConfig(payload) })
-          }
-        />
+        <>
+          <InteractiveBuilder
+            value={asInteractive(cfg)}
+            onChange={(payload) =>
+              onChange({
+                ...step,
+                step_config: {
+                  ...toStepConfig(payload),
+                  wait_for_reply: cfg.wait_for_reply,
+                  var_key: cfg.var_key,
+                  timeout_hours: cfg.timeout_hours,
+                },
+              })
+            }
+          />
+          <div className="mt-3 rounded-md border border-border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-medium text-foreground">{t("config.waitForReply")}</div>
+                <div className="text-[11px] text-muted-foreground">{t("config.waitForReplyHint")}</div>
+              </div>
+              <Switch
+                checked={cfg.wait_for_reply === true}
+                onCheckedChange={(v) =>
+                  set(v ? { wait_for_reply: true, var_key: (cfg.var_key as string) || "answer" } : { wait_for_reply: false })
+                }
+                aria-label={t("config.waitForReply")}
+              />
+            </div>
+            {cfg.wait_for_reply === true && (
+              <div className="mt-3">
+                <FieldBlock label={t("config.varKey")}>
+                  <Input
+                    value={(cfg.var_key as string) ?? ""}
+                    onChange={(e) => set({ var_key: e.target.value })}
+                    className="bg-muted text-foreground"
+                  />
+                </FieldBlock>
+                <p className="text-[11px] text-muted-foreground">
+                  {t("config.waitForReplyVars")}{" "}
+                  <code>{`{{ vars.${(cfg.var_key as string) || "answer"} }}`}</code>
+                  {" · "}
+                  <code>{`{{ vars.${(cfg.var_key as string) || "answer"}_id }}`}</code>
+                </p>
+              </div>
+            )}
+          </div>
+        </>
       )
     case "send_template":
       return (
@@ -1979,6 +2028,7 @@ function StepEditor({
             onChange={(e) => set({ var_key: e.target.value })}
             className="bg-muted text-foreground"
           />
+          <p className="mt-1 text-[11px] text-muted-foreground">{t("config.captureHint")}</p>
         </FieldBlock>
       )
     case "validate":
@@ -2004,6 +2054,55 @@ function StepEditor({
               <option value="regex">{t("config.ruleRegex")}</option>
             </select>
           </FieldBlock>
+          {cfg.rule === "regex" && (
+            <FieldBlock label={t("config.pattern")}>
+              <Input
+                value={(cfg.pattern as string) ?? ""}
+                onChange={(e) => set({ pattern: e.target.value })}
+                placeholder="^[A-Da-d]$"
+                className="bg-muted font-mono text-foreground"
+              />
+            </FieldBlock>
+          )}
+          <FieldBlock label={t("config.onInvalid")}>
+            <select
+              value={(cfg.on_invalid as string) ?? "stop"}
+              onChange={(e) =>
+                set(
+                  e.target.value === "retry"
+                    ? { on_invalid: "retry", max_attempts: (cfg.max_attempts as number) || 3 }
+                    : { on_invalid: "stop" },
+                )
+              }
+              className={SELECT_CLASS}
+            >
+              <option value="stop">{t("config.onInvalidStop")}</option>
+              <option value="retry">{t("config.onInvalidRetry")}</option>
+            </select>
+          </FieldBlock>
+          {cfg.on_invalid === "retry" && (
+            <>
+              <FieldBlock label={t("config.retryText")}>
+                <Textarea
+                  value={(cfg.retry_text as string) ?? ""}
+                  onChange={(e) => set({ retry_text: e.target.value })}
+                  placeholder={t("config.retryTextPlaceholder")}
+                  className="min-h-16 bg-muted text-foreground"
+                />
+              </FieldBlock>
+              <FieldBlock label={t("config.maxAttempts")}>
+                <Input
+                  type="number"
+                  min={2}
+                  max={10}
+                  value={(cfg.max_attempts as number) ?? 3}
+                  onChange={(e) => set({ max_attempts: Number(e.target.value) })}
+                  className="bg-muted text-foreground"
+                />
+              </FieldBlock>
+              <p className="text-[11px] text-muted-foreground">{t("config.retryHint")}</p>
+            </>
+          )}
         </>
       )
     case "add_note":

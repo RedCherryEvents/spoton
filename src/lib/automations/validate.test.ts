@@ -313,3 +313,51 @@ describe("validateTriggerForActivation", () => {
     expect(validateTriggerForActivation("some_future_trigger", {})).toEqual([]);
   });
 });
+
+describe("validateStepsForActivation — reply waits", () => {
+  const list = {
+    kind: "list",
+    body: "Pick one",
+    button_label: "Choose",
+    sections: [{ rows: [{ id: "a", title: "A" }] }],
+  };
+
+  it("needs a variable key when send_list waits for a reply", () => {
+    expect(
+      validateStepsForActivation([
+        { step_type: "send_list", step_config: { ...list, wait_for_reply: true, var_key: " " } },
+      ]).map((i) => i.path),
+    ).toEqual(["steps[0].var_key"]);
+    expect(
+      validateStepsForActivation([
+        { step_type: "send_list", step_config: { ...list, wait_for_reply: true, var_key: "pick" } },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("rejects a regex pattern that does not compile, but allows none", () => {
+    expect(
+      validateStepsForActivation([
+        { step_type: "validate", step_config: { var_key: "answer", rule: "regex", pattern: "([A-D" } },
+      ]).map((i) => i.path),
+    ).toEqual(["steps[0].pattern"]);
+    expect(
+      validateStepsForActivation([
+        { step_type: "validate", step_config: { var_key: "answer", rule: "regex" } },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("bounds max attempts when retrying", () => {
+    const run = (max_attempts: unknown) =>
+      validateStepsForActivation([
+        {
+          step_type: "validate",
+          step_config: { var_key: "answer", rule: "required", on_invalid: "retry", max_attempts },
+        },
+      ]).map((i) => i.path);
+    expect(run(1)).toEqual(["steps[0].max_attempts"]);
+    expect(run(11)).toEqual(["steps[0].max_attempts"]);
+    expect(run(3)).toEqual([]);
+  });
+});

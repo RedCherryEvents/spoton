@@ -67,6 +67,9 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       if (!result.ok) {
         issues.push({ path: `${path}.interactive`, message: result.error })
       }
+      if (c.wait_for_reply === true && !nonEmpty(c.var_key)) {
+        issues.push({ path: `${path}.var_key`, message: 'variable key is required when waiting for a reply' })
+      }
       break
     }
     case 'send_template':
@@ -174,6 +177,22 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       }
       if (!['required', 'email', 'phone', 'number', 'regex'].includes(String(c.rule))) {
         issues.push({ path: `${path}.rule`, message: 'validation rule is required' })
+      }
+      // No pattern is allowed (the engine treats it as `required`), but
+      // a pattern that doesn't compile would fail every answer at runtime.
+      if (c.rule === 'regex' && nonEmpty(c.pattern)) {
+        try {
+          new RegExp(String(c.pattern))
+        } catch {
+          issues.push({ path: `${path}.pattern`, message: 'pattern is not a valid regular expression' })
+        }
+      }
+      if (
+        c.on_invalid === 'retry' &&
+        c.max_attempts !== undefined &&
+        !(Number.isInteger(c.max_attempts) && Number(c.max_attempts) >= 2 && Number(c.max_attempts) <= 10)
+      ) {
+        issues.push({ path: `${path}.max_attempts`, message: 'max attempts must be a whole number from 2 to 10' })
       }
       break
     case 'add_note':
