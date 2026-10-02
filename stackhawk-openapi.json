@@ -2452,6 +2452,54 @@
           }
         }
       }
+    },
+    "/auth/callback": {
+      "get": {
+        "operationId": "GET_auth_callback",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "scan-code"
+            }
+          },
+          {
+            "name": "token_hash",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "scan-hash"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "recovery"
+            }
+          },
+          {
+            "name": "next",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "/reset-password"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "redirect"
+          }
+        }
+      }
     }
   }
 }

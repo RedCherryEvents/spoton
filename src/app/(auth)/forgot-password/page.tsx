@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,11 +17,29 @@ import {
 import { CheckCircle, ArrowLeft } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 
+// `useSearchParams` needs a Suspense boundary to keep the page
+// statically prerenderable (same pattern as the login page).
 export default function ForgotPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ForgotPasswordForm />
+    </Suspense>
+  );
+}
+
+function ForgotPasswordForm() {
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [submitError, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  // /auth/callback sends expired or already-used reset links back here.
+  const error =
+    submitError ??
+    (searchParams.get("error") === "link_invalid"
+      ? "That reset link is invalid or has expired. Request a new one below."
+      : null);
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
