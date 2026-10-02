@@ -1,15 +1,26 @@
+import { existsSync } from "node:fs";
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
+
+/**
+ * On ExFAT/FAT drives macOS writes AppleDouble `._*` sidecar files next
+ * to everything, including Turbopack's dev cache in .next/dev/cache.
+ * Turbopack expects numeric file names there and crashes on startup
+ * ("Failed to open database … invalid digit found in string"). A
+ * `._package.json` beside package.json means we're on such a drive, so
+ * skip the dev filesystem cache there. No effect on APFS / Linux / CI.
+ */
+const ON_APPLEDOUBLE_FS = existsSync("._package.json");
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 /**
  * Baseline security headers applied to every response.
  *
- * CSP ships as `Content-Security-Policy-Report-Only` so the browser
- * surfaces violations in the console without blocking anything — once
- * we have confidence nothing legit trips it (two deploys, a pass on
- * every route), flip the key to `Content-Security-Policy` to enforce.
+ * CSP is enforced (`Content-Security-Policy`). It previously shipped as
+ * Report-Only; a DAST scan flagged that as no CSP at all. If a
+ * legitimate resource gets blocked, widen the specific directive below
+ * rather than dropping back to Report-Only.
  *
  * The rest of the headers are straight blocks, safe to enforce today:
  *   - HSTS: only meaningful on HTTPS (no-op on http://localhost).
@@ -36,7 +47,7 @@ const SECURITY_HEADERS = [
     value: "camera=(), microphone=(self), geolocation=(), payment=(), usb=()",
   },
   {
-    key: "Content-Security-Policy-Report-Only",
+    key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
       // Next.js needs 'unsafe-inline' for its inline hydration script
@@ -69,6 +80,13 @@ const nextConfig: NextConfig = {
   // there leaves the deployment with no routable files (platform 404).
   ...(process.env.VERCEL ? {} : { output: "standalone" as const }),
 
+  // Don't advertise the framework via `X-Powered-By: Next.js`.
+  poweredByHeader: false,
+
+  experimental: {
+    turbopackFileSystemCacheForDev: !ON_APPLEDOUBLE_FS,
+  },
+
   /**
    * Cross-origin dev access (Next.js 16).
    *
@@ -86,6 +104,7 @@ const nextConfig: NextConfig = {
    */
   allowedDevOrigins: [
     "*.ngrok-free.app",
+    "*.ngrok-free.dev",
     "*.ngrok.app",
     "*.ngrok.io",
     "*.trycloudflare.com",

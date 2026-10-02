@@ -1,0 +1,37 @@
+# HawkScan DAST config — https://docs.stackhawk.com/hawkscan/configuration/
+#
+# Scope decision (2026-10-01): UNAUTHENTICATED scan only. The local app
+# talks to the hosted Supabase project in .env.local, so an authenticated
+# scan would fuzz writes (contacts, broadcasts, members) against real data.
+# To scan signed-in routes, point .env.local at a throwaway Supabase project
+# first and add an `authentication:` block.
+#
+# Run locally:  npm run build && npm run start   then   hawk scan
+app:
+  applicationId: ${APP_ID:151c7e0b-a7cf-4915-8ee1-36ced821c5a4}
+  env: ${APP_ENV:Production}
+  # `next start` serves plain HTTP locally.
+  host: ${APP_HOST:http://localhost:3000}
+  # Hand-derived from src/app/api/**/route.ts (67 routes, 101 operations).
+  # Regenerate when routes are added — the app does not serve a spec.
+  openApiConf:
+    filePath: stackhawk-openapi.json
+
+hawk:
+  spider:
+    # Crawl the server-rendered pages (/, /login, /signup, /join, /report).
+    base: true
+    # Ajax spider intentionally off: it drives a real browser and would
+    # submit the signup / forgot-password forms against production Supabase.
+    ajax: false
+    maxDurationMinutes: 2
+
+tags:
+  - name: _STACKHAWK_AGENT
+    value: ${HAWK_AGENT:none}
+  - name: _STACKHAWK_GIT_COMMIT_SHA
+    value: ${COMMIT_SHA:none}
+  - name: _STACKHAWK_GIT_BRANCH
+    value: ${BRANCH_NAME:none}
+  - name: git_origin
+    value: redcherryevents/spoton

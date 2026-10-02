@@ -1,0 +1,2457 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "SpotOn API (derived from src/app/api route files)",
+    "version": "0.8.0"
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/api/account/api-keys/{id}": {
+      "delete": {
+        "operationId": "DELETE_api_account_api_keys_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/account/api-keys": {
+      "get": {
+        "operationId": "GET_api_account_api_keys",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "POST_api_account_api_keys",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/invitations/{id}": {
+      "delete": {
+        "operationId": "DELETE_api_account_invitations_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/account/invitations": {
+      "get": {
+        "operationId": "GET_api_account_invitations",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "POST_api_account_invitations",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/members/{userId}": {
+      "patch": {
+        "operationId": "PATCH_api_account_members_userId_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_account_members_userId_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/account/members": {
+      "get": {
+        "operationId": "GET_api_account_members",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      }
+    },
+    "/api/account": {
+      "get": {
+        "operationId": "GET_api_account",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "PATCH_api_account",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/transfer-ownership": {
+      "post": {
+        "operationId": "POST_api_account_transfer_ownership",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/autoreply/{conversationId}": {
+      "post": {
+        "operationId": "POST_api_ai_autoreply_conversationId_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/config": {
+      "get": {
+        "operationId": "GET_api_ai_config",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "POST_api_ai_config",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_ai_config",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      }
+    },
+    "/api/ai/draft": {
+      "post": {
+        "operationId": "POST_api_ai_draft",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/knowledge/{id}": {
+      "get": {
+        "operationId": "GET_api_ai_knowledge_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "PATCH_api_ai_knowledge_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_ai_knowledge_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/ai/knowledge/reindex": {
+      "post": {
+        "operationId": "POST_api_ai_knowledge_reindex",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/knowledge": {
+      "get": {
+        "operationId": "GET_api_ai_knowledge",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "POST_api_ai_knowledge",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/playground": {
+      "post": {
+        "operationId": "POST_api_ai_playground",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/test": {
+      "post": {
+        "operationId": "POST_api_ai_test",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/usage": {
+      "get": {
+        "operationId": "GET_api_ai_usage",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      }
+    },
+    "/api/automations/{id}/duplicate": {
+      "post": {
+        "operationId": "POST_api_automations_id_duplicate",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations/{id}": {
+      "get": {
+        "operationId": "GET_api_automations_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "PATCH_api_automations_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_automations_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/automations/cron": {
+      "get": {
+        "operationId": "GET_api_automations_cron",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      }
+    },
+    "/api/automations/engine": {
+      "post": {
+        "operationId": "POST_api_automations_engine",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations": {
+      "get": {
+        "operationId": "GET_api_automations",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "POST_api_automations",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/campaigns/{id}/entries/{entryId}": {
+      "get": {
+        "operationId": "GET_api_campaigns_id_entries_entryId_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          },
+          {
+            "name": "entryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/campaigns/{id}/entries/export": {
+      "post": {
+        "operationId": "POST_api_campaigns_id_entries_export",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/campaigns/{id}/entries": {
+      "get": {
+        "operationId": "GET_api_campaigns_id_entries",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "POST_api_campaigns_id_entries",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/campaigns/{id}/fields/{fieldId}": {
+      "patch": {
+        "operationId": "PATCH_api_campaigns_id_fields_fieldId_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          },
+          {
+            "name": "fieldId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_campaigns_id_fields_fieldId_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          },
+          {
+            "name": "fieldId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/campaigns/{id}/fields": {
+      "get": {
+        "operationId": "GET_api_campaigns_id_fields",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "POST_api_campaigns_id_fields",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/campaigns/{id}/report-shares/{shareId}": {
+      "delete": {
+        "operationId": "DELETE_api_campaigns_id_report_shares_shareId_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          },
+          {
+            "name": "shareId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/campaigns/{id}/report-shares": {
+      "get": {
+        "operationId": "GET_api_campaigns_id_report_shares",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "POST_api_campaigns_id_report_shares",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/campaigns/{id}": {
+      "get": {
+        "operationId": "GET_api_campaigns_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "PATCH_api_campaigns_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_campaigns_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/campaigns/{id}/stats": {
+      "get": {
+        "operationId": "GET_api_campaigns_id_stats",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/campaigns": {
+      "get": {
+        "operationId": "GET_api_campaigns",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "POST_api_campaigns",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contacts/{id}/tags": {
+      "post": {
+        "operationId": "POST_api_contacts_id_tags",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_contacts_id_tags",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/flows/{id}/activate": {
+      "post": {
+        "operationId": "POST_api_flows_id_activate",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/flows/{id}/duplicate": {
+      "post": {
+        "operationId": "POST_api_flows_id_duplicate",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/flows/{id}": {
+      "get": {
+        "operationId": "GET_api_flows_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      },
+      "put": {
+        "operationId": "PUT_api_flows_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_flows_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/flows/{id}/runs": {
+      "get": {
+        "operationId": "GET_api_flows_id_runs",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/flows/cron": {
+      "get": {
+        "operationId": "GET_api_flows_cron",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      }
+    },
+    "/api/flows": {
+      "get": {
+        "operationId": "GET_api_flows",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "POST_api_flows",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/flows/templates": {
+      "get": {
+        "operationId": "GET_api_flows_templates",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      }
+    },
+    "/api/invitations/{token}/peek": {
+      "get": {
+        "operationId": "GET_api_invitations_token_peek",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "scan-token"
+            }
+          }
+        ]
+      }
+    },
+    "/api/invitations/{token}/redeem": {
+      "post": {
+        "operationId": "POST_api_invitations_token_redeem",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "scan-token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/campaign-reports/{token}": {
+      "get": {
+        "operationId": "GET_api_public_campaign_reports_token_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "scan-token"
+            }
+          }
+        ]
+      }
+    },
+    "/api/quick-replies/{id}": {
+      "patch": {
+        "operationId": "PATCH_api_quick_replies_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_quick_replies_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/quick-replies": {
+      "get": {
+        "operationId": "GET_api_quick_replies",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "POST_api_quick_replies",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/broadcasts/{id}": {
+      "get": {
+        "operationId": "GET_api_v1_broadcasts_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/broadcasts": {
+      "post": {
+        "operationId": "POST_api_v1_broadcasts",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contacts/{id}": {
+      "get": {
+        "operationId": "GET_api_v1_contacts_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "PATCH_api_v1_contacts_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contacts": {
+      "get": {
+        "operationId": "GET_api_v1_contacts",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "POST_api_v1_contacts",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{id}/messages": {
+      "get": {
+        "operationId": "GET_api_v1_conversations_id_messages",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}": {
+      "get": {
+        "operationId": "GET_api_v1_conversations_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/conversations": {
+      "get": {
+        "operationId": "GET_api_v1_conversations",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "GET_api_v1_me",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      }
+    },
+    "/api/v1/messages": {
+      "post": {
+        "operationId": "POST_api_v1_messages",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/{id}": {
+      "get": {
+        "operationId": "GET_api_v1_webhooks_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "PATCH_api_v1_webhooks_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_v1_webhooks_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/webhooks": {
+      "get": {
+        "operationId": "GET_api_v1_webhooks",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "POST_api_v1_webhooks",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whatsapp/broadcast/{id}/resume": {
+      "post": {
+        "operationId": "POST_api_whatsapp_broadcast_id_resume",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whatsapp/broadcast": {
+      "post": {
+        "operationId": "POST_api_whatsapp_broadcast",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whatsapp/config": {
+      "get": {
+        "operationId": "GET_api_whatsapp_config",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "POST_api_whatsapp_config",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_whatsapp_config",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      }
+    },
+    "/api/whatsapp/config/verify-registration": {
+      "get": {
+        "operationId": "GET_api_whatsapp_config_verify_registration",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      }
+    },
+    "/api/whatsapp/media/{mediaId}": {
+      "get": {
+        "operationId": "GET_api_whatsapp_media_mediaId_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "mediaId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/whatsapp/react": {
+      "post": {
+        "operationId": "POST_api_whatsapp_react",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whatsapp/send": {
+      "post": {
+        "operationId": "POST_api_whatsapp_send",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whatsapp/templates/{id}": {
+      "patch": {
+        "operationId": "PATCH_api_whatsapp_templates_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_whatsapp_templates_id_",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "00000000-0000-0000-0000-000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "/api/whatsapp/templates/submit": {
+      "post": {
+        "operationId": "POST_api_whatsapp_templates_submit",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whatsapp/templates/sync": {
+      "post": {
+        "operationId": "POST_api_whatsapp_templates_sync",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whatsapp/webhook": {
+      "get": {
+        "operationId": "GET_api_whatsapp_webhook",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "POST_api_whatsapp_webhook",
+        "responses": {
+          "default": {
+            "description": "response"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "test"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
