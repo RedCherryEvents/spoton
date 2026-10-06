@@ -112,6 +112,10 @@ interface MediaDraft {
 interface MessageComposerProps {
   conversationId: string;
   sessionExpired: boolean;
+  /** A template went out after the customer's last message; the window
+   *  stays closed until they reply. */
+  templateSentAwaitingReply?: boolean;
+  contactName?: string;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
@@ -134,6 +138,8 @@ const OPUS_ENCODER_PATH = "/opus/encoderWorker.min.js";
 export function MessageComposer({
   conversationId,
   sessionExpired,
+  templateSentAwaitingReply = false,
+  contactName,
   onSend,
   onSendMedia,
   onSendInteractive,
@@ -549,7 +555,11 @@ export function MessageComposer({
       {sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
-            {t("sessionExpiredHint")}
+            {templateSentAwaitingReply
+              ? t("templateSentAwaitingReply", {
+                  name: contactName || t("theCustomer"),
+                })
+              : t("sessionExpiredHint")}
           </p>
           <Button
             variant="ghost"

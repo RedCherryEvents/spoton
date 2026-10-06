@@ -259,6 +259,18 @@ export function MessageThread({
     return { expired, remaining };
   }, [messages, tTimer]);
 
+  // A template re-engages the customer but can't reopen the window — only
+  // their reply does. Track whether one already went out since they last
+  // wrote so the composer can say "waiting for reply" instead of nagging.
+  const templateSentAwaitingReply = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.sender_type === "customer") return false;
+      if (m.content_type === "template" && m.status !== "failed") return true;
+    }
+    return false;
+  }, [messages]);
+
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
   // fetchMessages to change → useEffect re-fires → refetch → realtime
@@ -1189,6 +1201,8 @@ export function MessageThread({
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
+        templateSentAwaitingReply={templateSentAwaitingReply}
+        contactName={contactDisplayName}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onSendInteractive={handleSendInteractive}
