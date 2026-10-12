@@ -173,6 +173,17 @@ export interface SetTagNodeConfig {
   next_node_key: string;
 }
 
+/**
+ * Runs one of the account's automations for the run's contact, then
+ * auto-advances. Paused automations are skipped (logged, not fatal).
+ */
+export interface RunAutomationNodeConfig {
+  automation_id: string;
+  /** Builder-only display copy of the automation's name. */
+  automation_name?: string;
+  next_node_key: string;
+}
+
 // Terminal nodes carry no config — they just stop the run.
 export type EndNodeConfig = Record<string, never>;
 
@@ -193,6 +204,7 @@ export type FlowNodeConfig =
   | { node_type: "collect_input"; config: CollectInputNodeConfig }
   | { node_type: "condition"; config: ConditionNodeConfig }
   | { node_type: "set_tag"; config: SetTagNodeConfig }
+  | { node_type: "run_automation"; config: RunAutomationNodeConfig }
   | { node_type: "handoff"; config: HandoffNodeConfig }
   | { node_type: "end"; config: EndNodeConfig };
 

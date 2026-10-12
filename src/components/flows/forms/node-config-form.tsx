@@ -196,6 +196,17 @@ export function NodeConfigForm({
         />
       );
 
+    case "run_automation":
+      return (
+        <RunAutomationForm
+          cfg={cfg as RunAutomationCfg}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
+          t={t}
+        />
+      );
+
     case "handoff":
       return (
         <TextRow
@@ -826,6 +837,103 @@ function SetTagForm({
             />
           )}
         </div>
+      </div>
+      <NextNodeRow
+        value={cfg.next_node_key ?? ""}
+        allNodes={allNodes}
+        currentKey={currentKey}
+        onChange={(v) => onUpdateConfig({ next_node_key: v })}
+        label={t("thenAdvanceTo")}
+      />
+    </>
+  );
+}
+
+// ============================================================
+// run_automation
+// ============================================================
+
+interface RunAutomationCfg {
+  automation_id?: string;
+  /** Display-only copy of the picked automation's name for node summaries. */
+  automation_name?: string;
+  next_node_key?: string;
+}
+
+interface AutomationOption {
+  id: string;
+  name: string;
+  is_active: boolean;
+}
+
+function RunAutomationForm({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: RunAutomationCfg;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const [automations, setAutomations] = useState<AutomationOption[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/automations")
+      .then((res) => (res.ok ? res.json() : { automations: [] }))
+      .then((json: { automations?: AutomationOption[] }) => {
+        if (!cancelled) setAutomations(json.automations ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setAutomations([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const picked = automations?.find((a) => a.id === cfg.automation_id);
+
+  return (
+    <>
+      <div>
+        <label className="mb-1 block text-xs text-muted-foreground">
+          {t("automationLabel")}
+        </label>
+        {automations === null ? (
+          <div className="flex h-9 items-center">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : automations.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t("noAutomations")}</p>
+        ) : (
+          <Select
+            value={cfg.automation_id ?? ""}
+            onValueChange={(v) => {
+              const hit = automations.find((a) => a.id === v);
+              onUpdateConfig({ automation_id: v, automation_name: hit?.name ?? "" });
+            }}
+          >
+            <SelectTrigger className="bg-muted">
+              <SelectValue placeholder={t("pickAutomation")} />
+            </SelectTrigger>
+            <SelectContent>
+              {automations.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.is_active ? a.name : t("automationPaused", { name: a.name })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {picked && !picked.is_active && (
+          <p className="mt-1 text-[10px] text-amber-400">{t("automationPausedHint")}</p>
+        )}
+        <p className="mt-1 text-[10px] text-muted-foreground">{t("runAutomationHelp")}</p>
       </div>
       <NextNodeRow
         value={cfg.next_node_key ?? ""}

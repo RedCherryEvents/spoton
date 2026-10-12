@@ -47,6 +47,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
+import { blockedAutomationKeywords } from '@/lib/automations/keyword-conflicts';
 import { type ValidationIssue } from '@/lib/flows/validate';
 import {
   NODE_META,
@@ -329,6 +331,9 @@ function TriggerPanel({
           </div>
         )}
       </div>
+      {state.trigger_type === 'keyword' && (
+        <AutomationKeywordConflicts triggerConfig={state.trigger_config} t={t} />
+      )}
       {triggerIssues.length > 0 && (
         <div className="mt-3 flex flex-col gap-1">
           {triggerIssues.map((i, ix) => (
@@ -337,6 +342,64 @@ function TriggerPanel({
         </div>
       )}
     </section>
+  );
+}
+
+interface KeywordAutomation {
+  id: string;
+  name: string;
+  trigger_config: Record<string, unknown>;
+}
+
+/** Active keyword automations this flow will pre-empt (flows see messages first). */
+function AutomationKeywordConflicts({
+  triggerConfig,
+  t,
+}: {
+  triggerConfig: Record<string, unknown>;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const [automations, setAutomations] = useState<KeywordAutomation[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    createClient()
+      .from('automations')
+      .select('id, name, trigger_config')
+      .eq('trigger_type', 'keyword_match')
+      .eq('is_active', true)
+      .then(({ data }) => {
+        if (!cancelled) setAutomations((data as KeywordAutomation[] | null) ?? []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const conflicts = automations.flatMap((a) =>
+    blockedAutomationKeywords(a.trigger_config, triggerConfig).map((c) => ({
+      ...c,
+      automationName: a.name,
+    })),
+  );
+  if (conflicts.length === 0) return null;
+
+  return (
+    <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+      <p className="font-medium">{t('automationConflictTitle')}</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4">
+        {conflicts.map((c) => (
+          <li key={`${c.automationName}:${c.automationKeyword}`}>
+            {t('automationConflictItem', {
+              automation: c.automationName,
+              keyword: c.automationKeyword,
+              flowKeyword: c.flowKeyword,
+            })}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-amber-300/80">{t('automationConflictHint')}</p>
+    </div>
   );
 }
 
@@ -589,6 +652,7 @@ function AddNodeButton({ onAdd, t }: { onAdd: (type: NodeType) => void; t: Retur
     'collect_input',
     'condition',
     'set_tag',
+    'run_automation',
     'handoff',
     'end',
   ];

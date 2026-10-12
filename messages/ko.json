@@ -961,7 +961,8 @@
         "campaign_add_entry": "캠페인 참가 추가",
         "campaign_set_status": "참가 상태 설정",
         "campaign_generate_reference": "참가 번호 생성",
-        "campaign_set_field": "캠페인 필드 설정"
+        "campaign_set_field": "캠페인 필드 설정",
+        "start_flow": "플로우 시작"
       },
       "categories": {
         "messages": "메시지",
@@ -984,6 +985,18 @@
         "any": "모든 캠페인",
         "placeholder": "캠페인 id",
         "unknown": "{id} (알 수 없는 캠페인)"
+      },
+      "flows": {
+        "label": "플로우",
+        "select": "플로우 선택…",
+        "draftName": "{name} (비활성)",
+        "unknown": "{id} (알 수 없는 플로우)",
+        "none": "아직 플로우가 없습니다. 먼저 플로우에서 만드세요.",
+        "notActiveHint": "이 플로우는 비활성 상태라 활성화할 때까지 이 단계가 건너뛰어집니다.",
+        "help": "이 연락처에 대해 플로우를 시작합니다. 이미 플로우 진행 중이면 건너뜁니다. 팁: 플로우 트리거를 \"수동 전용\"으로 설정하면 자동화에서만 실행됩니다.",
+        "conflictTitle": "플로우가 이 메시지를 먼저 처리합니다",
+        "conflictItem": "\"{keyword}\"은(는) 플로우 \"{flow}\"도 시작합니다 (키워드 \"{flowKeyword}\")",
+        "conflictHint": "플로우가 자동화보다 먼저 실행되므로 해당 메시지에서는 이 자동화가 실행되지 않습니다. 키워드를 바꾸거나, 플로우에서 키워드를 빼고 여기서 플로우 시작 단계를 사용하세요."
       },
       "audience": "대상",
       "audienceNone": "연락처 없음 (한 번 실행)",
@@ -1384,9 +1397,21 @@
     },
     "automation": {
       "title": "이 캠페인의 자동화",
-      "empty": "이 캠페인을 참조하는 자동화가 없습니다. 자동화에서 캠페인 참가 추가 단계에 이 캠페인을 선택하세요.",
-      "open": "빌더 열기",
-      "new": "새 자동화"
+      "subtitle": "자동화 {total}개 적용 · {active}개 활성",
+      "subtitleEmpty": "아직 이 캠페인에 연결된 자동화가 없습니다",
+      "emptyTitle": "적용된 자동화 없음",
+      "empty": "이 캠페인의 키워드를 감지해 참가를 추가하거나, 참가가 생길 때 실행되는 자동화를 만드세요.",
+      "loadError": "이 캠페인의 자동화를 불러오지 못했습니다",
+      "open": "편집",
+      "new": "새 자동화",
+      "steps": "단계 {count}개",
+      "links": {
+        "entryTrigger": "새 참가 시 실행",
+        "entryTriggerAny": "모든 캠페인 참가 시 실행",
+        "scheduledAudience": "참가자에게 예약 발송",
+        "keyword": "키워드: {keyword}",
+        "step": "단계: {step}"
+      }
     },
     "report": {
       "brand": "SPOT ON",
@@ -1497,7 +1522,10 @@
       "whenLabel": "조건…",
       "triggerKeywordTitle": "메시지에 키워드가 포함될 때",
       "triggerFirstInboundTitle": "고객의 첫 수신 메시지",
-      "triggerManualTitle": "수동 전용 (자동 트리거 없음)",
+      "triggerManualTitle": "수동 전용 (자동화에서 시작)",
+      "automationConflictTitle": "이 플로우가 일부 자동화를 막습니다",
+      "automationConflictItem": "자동화 \"{automation}\"의 키워드 \"{keyword}\"를 이 플로우가 \"{flowKeyword}\"로 먼저 처리합니다",
+      "automationConflictHint": "플로우가 자동화보다 먼저 실행되므로, 이 플로우가 활성인 동안 해당 메시지에서는 그 자동화가 실행되지 않습니다.",
       "keywordsLabel": "키워드 (쉼표로 구분)",
       "keywordsPlaceholder": "support, help, hi",
       "entryNodeTitle": "시작 노드:",
@@ -1562,6 +1590,12 @@
         "removeTag": "태그 제거",
         "tagUuidPlaceholder": "태그 UUID",
         "thenAdvanceTo": "이후 다음 진행",
+        "automationLabel": "자동화",
+        "pickAutomation": "자동화 선택…",
+        "noAutomations": "아직 자동화가 없습니다. 먼저 자동화에서 만드세요.",
+        "automationPaused": "{name} (일시 중지됨)",
+        "automationPausedHint": "이 자동화는 일시 중지되어 활성화할 때까지 이 노드에서 건너뜁니다.",
+        "runAutomationHelp": "트리거와 관계없이 이 연락처에 대해 자동화 단계를 실행한 뒤 플로우를 계속합니다.",
         "mediaTypeLabel": "미디어 유형",
         "imageLabel": "이미지 (PNG, JPEG, WebP)",
         "videoLabel": "동영상 (MP4, 3GP)",
@@ -1615,6 +1649,10 @@
           "label": "연락처 태그 지정",
           "blurb": "연락처 태그를 추가하거나 제거합니다"
         },
+        "run_automation": {
+          "label": "자동화 실행",
+          "blurb": "이 연락처에 대해 자동화를 실행합니다"
+        },
         "handoff": {
           "label": "상담원에게 인계",
           "blurb": "대화를 사람에게 넘깁니다"
@@ -1657,7 +1695,9 @@
       "modeAdd": "추가",
       "modeRemove": "제거",
       "tagPicked": "{tag} 태그 {mode}…",
-      "tagNone": "태그 {mode} (선택된 태그 없음)"
+      "tagNone": "태그 {mode} (선택된 태그 없음)",
+      "automationPicked": "자동화 {id}…",
+      "automationNone": "선택된 자동화 없음"
     }
   },
   "Settings": {

@@ -33,6 +33,7 @@ import type {
   CampaignSetStatusStepConfig,
   CampaignGenerateReferenceStepConfig,
   CampaignSetFieldStepConfig,
+  StartFlowStepConfig,
   RandomSplitStepConfig,
   GoToStepConfig,
   EndStepConfig,
@@ -120,6 +121,8 @@ export interface DispatchInput {
   triggerType: AutomationTriggerType
   contactId?: string | null
   context?: AutomationContext
+  /** Overrides `triggerType` in automation_logs.trigger_event (e.g. `flow:<id>`). */
+  triggerEvent?: string
 }
 
 /**
@@ -182,6 +185,53 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
   } catch (err) {
     console.error('[automations] dispatch failed:', err)
   }
+}
+
+export type RunAutomationByIdResult =
+  | { status: 'ran' }
+  | { status: 'skipped'; reason: 'not_found' | 'paused' | 'contact_not_in_account' }
+
+/**
+ * Run one specific automation for a contact regardless of its trigger —
+ * used by the flows `run_automation` node. Paused automations are
+ * skipped so pausing still stops them everywhere.
+ */
+export async function runAutomationById(args: {
+  accountId: string
+  automationId: string
+  contactId: string | null
+  context?: AutomationContext
+  triggerEvent: string
+}): Promise<RunAutomationByIdResult> {
+  const db = supabaseAdmin()
+  const { data: automation, error } = await db
+    .from('automations')
+    .select('*')
+    .eq('id', args.automationId)
+    .eq('account_id', args.accountId)
+    .maybeSingle()
+  if (error) throw new Error(`automation lookup failed: ${error.message}`)
+  if (!automation) return { status: 'skipped', reason: 'not_found' }
+  if (!(automation as Automation).is_active) return { status: 'skipped', reason: 'paused' }
+
+  if (args.contactId) {
+    const { data: owned } = await db
+      .from('contacts')
+      .select('id')
+      .eq('id', args.contactId)
+      .eq('account_id', args.accountId)
+      .maybeSingle()
+    if (!owned) return { status: 'skipped', reason: 'contact_not_in_account' }
+  }
+
+  await executeAutomation(automation as Automation, {
+    accountId: args.accountId,
+    triggerType: (automation as Automation).trigger_type,
+    contactId: args.contactId,
+    context: args.context,
+    triggerEvent: args.triggerEvent,
+  })
+  return { status: 'ran' }
 }
 
 /**
@@ -425,7 +475,7 @@ async function executeAutomation(automation: Automation, input: DispatchInput) {
       // after teammates join the account.
       user_id: automation.user_id,
       contact_id: input.contactId ?? null,
-      trigger_event: input.triggerType,
+      trigger_event: input.triggerEvent ?? input.triggerType,
       steps_executed: [],
       // Seeded pessimistically. The row is written BEFORE any step runs,
       // and every terminal path below overwrites it (`appendResults` at
@@ -454,7 +504,7 @@ async function executeAutomation(automation: Automation, input: DispatchInput) {
       branch: null,
       startPosition: 0,
       logId: log.id,
-      triggerEvent: input.triggerType,
+      triggerEvent: input.triggerEvent ?? input.triggerType,
     })
   } catch (err) {
     if (!(err instanceof AutomationEnded)) throw err
@@ -1183,6 +1233,27 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         value: interpolate(cfg.value ?? '', args),
         entryId: args.context.entry?.id,
       })
+    }
+
+    case 'start_flow': {
+      const cfg = step.step_config as StartFlowStepConfig
+      if (!args.contactId || !cfg.flow_id) throw new Error('start_flow needs contact + flow_id')
+      const conversationId = await resolveConversationId(args)
+      // Dynamic import: flows/engine dynamically imports this module for
+      // its run_automation node, so a static import would cycle.
+      const { startFlowForContact } = await import('@/lib/flows/engine')
+      const result = await startFlowForContact({
+        accountId: args.automation.account_id,
+        flowId: cfg.flow_id,
+        contactId: args.contactId,
+        conversationId,
+        startedBy: `automation:${args.automation.id}`,
+      })
+      if (result.started) return `flow started (run ${result.flow_run_id})`
+      if (result.reason === 'already_in_this_flow' || result.reason === 'already_in_another_flow') {
+        return `flow not started: ${result.reason.replace(/_/g, ' ')}`
+      }
+      throw new Error(`start_flow failed: ${result.reason.replace(/_/g, ' ')}`)
     }
 
     case 'update_deal': {

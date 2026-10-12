@@ -46,6 +46,7 @@ import {
   CornerDownRight,
   Flag,
   Copy,
+  Workflow,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -89,6 +90,7 @@ import {
   type StepPath,
 } from "@/lib/automations/builder-tree"
 import { keywordTextMatches } from "@/lib/automations/keyword-match"
+import { blockedAutomationKeywords } from "@/lib/automations/keyword-conflicts"
 import { cn } from "@/lib/utils"
 
 // ------------------------------------------------------------
@@ -154,6 +156,7 @@ const STEP_META: Record<AutomationStepType, StepMeta> = {
   campaign_set_status: { label: "campaign_set_status", icon: Flag, border: "border-l-violet-500" },
   campaign_generate_reference: { label: "campaign_generate_reference", icon: Hash, border: "border-l-violet-500" },
   campaign_set_field: { label: "campaign_set_field", icon: PencilLine, border: "border-l-violet-500" },
+  start_flow: { label: "start_flow", icon: Workflow, border: "border-l-amber-500" },
 }
 
 const BRANCHING_STEPS = new Set<AutomationStepType>(["condition", "random_split"])
@@ -196,7 +199,7 @@ const ADDABLE_GROUPS: { category: string; types: AutomationStepType[] }[] = [
   },
   {
     category: "flow",
-    types: ["wait", "condition", "random_split", "go_to", "end"],
+    types: ["wait", "condition", "random_split", "go_to", "start_flow", "end"],
   },
   {
     category: "integrations",
@@ -287,6 +290,8 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return { campaign_id: "", status: "in_progress" }
     case "campaign_set_field":
       return { campaign_id: "", field_key: "", value: "" }
+    case "start_flow":
+      return { flow_id: "" }
     case "random_split":
       return { percent: 50 }
     case "go_to":
@@ -320,6 +325,15 @@ interface AutomationResources {
   pipelines: PipelineOption[]
   stages: PipelineStageOption[]
   campaigns: Campaign[]
+  flows: FlowOption[]
+}
+
+interface FlowOption {
+  id: string
+  name: string
+  status: "draft" | "active" | "archived"
+  trigger_type: string
+  trigger_config: Record<string, unknown>
 }
 
 interface PipelineOption {
@@ -342,6 +356,7 @@ const ResourcesContext = createContext<AutomationResources>({
   pipelines: [],
   stages: [],
   campaigns: [],
+  flows: [],
 })
 
 function useResources(): AutomationResources {
@@ -356,6 +371,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
   const [pipelines, setPipelines] = useState<PipelineOption[]>([])
   const [stages, setStages] = useState<PipelineStageOption[]>([])
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
+  const [flows, setFlows] = useState<FlowOption[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -366,7 +382,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
     // actually be sent (anything else 400s at send time), matching the
     // broadcast picker.
     void (async () => {
-      const [tagsRes, templatesRes, customFieldsRes, pipelinesRes, stagesRes, campaignsRes] =
+      const [tagsRes, templatesRes, customFieldsRes, pipelinesRes, stagesRes, campaignsRes, flowsRes] =
         await Promise.all([
           supabase.from("tags").select("*").order("name"),
           supabase
@@ -381,6 +397,11 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
             .select("id, name, pipeline_id, position")
             .order("position"),
           supabase.from("campaigns").select("id, name, code, status").order("name"),
+          supabase
+            .from("flows")
+            .select("id, name, status, trigger_type, trigger_config")
+            .neq("status", "archived")
+            .order("name"),
         ])
       if (cancelled) return
       setTags((tagsRes.data as TagRecord[] | null) ?? [])
@@ -393,6 +414,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
       setCampaigns(
         campaignsRes.error ? [] : ((campaignsRes.data as Campaign[] | null) ?? []),
       )
+      setFlows(flowsRes.error ? [] : ((flowsRes.data as FlowOption[] | null) ?? []))
     })()
 
     // Members go through the API so we inherit its email-visibility
@@ -416,7 +438,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
 
   return (
     <ResourcesContext.Provider
-      value={{ tags, members, templates, customFields, pipelines, stages, campaigns }}
+      value={{ tags, members, templates, customFields, pipelines, stages, campaigns, flows }}
     >
       {children}
     </ResourcesContext.Provider>
@@ -516,6 +538,39 @@ function CampaignSelect({
         <option value={value}>{t("campaigns.unknown", { id: value })}</option>
       )}
     </select>
+  )
+}
+
+function FlowSelect({
+  value,
+  onChange,
+  t,
+}: {
+  value: string
+  onChange: (v: string) => void
+  t: ReturnType<typeof useTranslations>
+}) {
+  const { flows } = useResources()
+  const selected = flows.find((f) => f.id === value)
+  return (
+    <>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={SELECT_CLASS}>
+        <option value="">{t("flows.select")}</option>
+        {flows.map((f) => (
+          <option key={f.id} value={f.id}>
+            {f.status === "active" ? f.name : t("flows.draftName", { name: f.name })}
+          </option>
+        ))}
+        {value && !selected && <option value={value}>{t("flows.unknown", { id: value })}</option>}
+      </select>
+      {flows.length === 0 && (
+        <p className="mt-1 text-[11px] text-muted-foreground">{t("flows.none")}</p>
+      )}
+      {selected && selected.status !== "active" && (
+        <p className="mt-1 text-[11px] text-amber-400">{t("flows.notActiveHint")}</p>
+      )}
+      <p className="mt-1 text-[11px] text-muted-foreground">{t("flows.help")}</p>
+    </>
   )
 }
 
@@ -1363,6 +1418,49 @@ function KeywordMatchConfig({
         />
         {t("config.caseSensitive")}
       </label>
+      <FlowKeywordConflicts
+        keywords={liveKeywords}
+        caseSensitive={Boolean(config?.case_sensitive)}
+        t={t}
+      />
+    </div>
+  )
+}
+
+function FlowKeywordConflicts({
+  keywords,
+  caseSensitive,
+  t,
+}: {
+  keywords: string[]
+  caseSensitive: boolean
+  t: ReturnType<typeof useTranslations>
+}) {
+  const { flows } = useResources()
+  const conflicts = flows
+    .filter((f) => f.status === "active" && f.trigger_type === "keyword")
+    .flatMap((f) =>
+      blockedAutomationKeywords(
+        { keywords, case_sensitive: caseSensitive },
+        f.trigger_config,
+      ).map((c) => ({ ...c, flowName: f.name })),
+    )
+  if (conflicts.length === 0) return null
+  return (
+    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+      <p className="font-medium">{t("flows.conflictTitle")}</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4">
+        {conflicts.map((c) => (
+          <li key={`${c.flowName}:${c.automationKeyword}`}>
+            {t("flows.conflictItem", {
+              keyword: c.automationKeyword,
+              flow: c.flowName,
+              flowKeyword: c.flowKeyword,
+            })}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-amber-300/80">{t("flows.conflictHint")}</p>
     </div>
   )
 }
@@ -2214,6 +2312,16 @@ function StepEditor({
             />
           </FieldBlock>
         </>
+      )
+    case "start_flow":
+      return (
+        <FieldBlock label={t("flows.label")}>
+          <FlowSelect
+            value={(cfg.flow_id as string) ?? ""}
+            onChange={(v) => set({ flow_id: v })}
+            t={t}
+          />
+        </FieldBlock>
       )
     case "random_split":
       return (

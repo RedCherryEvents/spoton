@@ -1,7 +1,8 @@
 "use client"
 
-import { Suspense, useMemo } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
+import { Loader2 } from "lucide-react"
 
 import {
   AutomationBuilder,
@@ -9,7 +10,7 @@ import {
   type BuilderStep,
 } from "@/components/automations/automation-builder"
 import { AUTOMATION_TEMPLATES, type TemplateSlug } from "@/lib/automations/templates"
-import type { AutomationStepType, AutomationTriggerType } from "@/types"
+import type { AutomationStepType, AutomationTriggerType, Campaign } from "@/types"
 
 // `useSearchParams` requires a Suspense boundary or the production build
 // bails to CSR and errors out. Thin wrapper supplies it; the inner
@@ -25,8 +26,49 @@ export default function NewAutomationPage() {
 function NewAutomationPageInner() {
   const params = useSearchParams()
   const template = params.get("template") as TemplateSlug | null
+  const campaignId = template ? null : params.get("campaign")
+  // undefined = still loading, null = not found / not requested
+  const [campaign, setCampaign] = useState<Campaign | null | undefined>(
+    campaignId ? undefined : null,
+  )
+
+  useEffect(() => {
+    if (!campaignId) return
+    let cancelled = false
+    fetch(`/api/campaigns/${campaignId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (!cancelled) setCampaign((body?.campaign as Campaign | undefined) ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setCampaign(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [campaignId])
 
   const initial: BuilderInitial = useMemo(() => {
+    if (campaign) {
+      return {
+        name: `${campaign.name} entries`,
+        description: "",
+        trigger_type: "keyword_match" as AutomationTriggerType,
+        trigger_config: {
+          keywords: [campaign.keyword || campaign.code],
+          match_type: "word",
+          case_sensitive: false,
+        },
+        is_active: false,
+        steps: [
+          {
+            cid: uid(),
+            step_type: "campaign_add_entry" as AutomationStepType,
+            step_config: { campaign_id: campaign.id },
+          },
+        ],
+      }
+    }
     if (template && AUTOMATION_TEMPLATES[template]) {
       const t = AUTOMATION_TEMPLATES[template]
       const steps = expandFromSeeds(
@@ -55,7 +97,15 @@ function NewAutomationPageInner() {
       is_active: false,
       steps: [],
     }
-  }, [template])
+  }, [template, campaign])
+
+  if (campaign === undefined) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return <AutomationBuilder initial={initial} />
 }

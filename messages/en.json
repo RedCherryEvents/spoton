@@ -961,7 +961,8 @@
         "campaign_add_entry": "Add Campaign Entry",
         "campaign_set_status": "Set Entry Status",
         "campaign_generate_reference": "Generate Entry Reference",
-        "campaign_set_field": "Set Campaign Field"
+        "campaign_set_field": "Set Campaign Field",
+        "start_flow": "Start Flow"
       },
       "categories": {
         "messages": "Messages",
@@ -984,6 +985,18 @@
         "any": "Any campaign",
         "placeholder": "Campaign id",
         "unknown": "{id} (unknown campaign)"
+      },
+      "flows": {
+        "label": "Flow",
+        "select": "Select a flow…",
+        "draftName": "{name} (not active)",
+        "unknown": "{id} (unknown flow)",
+        "none": "No flows yet. Create one under Flows first.",
+        "notActiveHint": "This flow isn't active, so the step will be skipped until you activate it.",
+        "help": "Starts the flow for this contact. Skipped if they're already in a flow. Tip: set the flow's trigger to \"Manual only\" so it runs only from automations.",
+        "conflictTitle": "A flow will take these messages first",
+        "conflictItem": "\"{keyword}\" also starts flow \"{flow}\" (keyword \"{flowKeyword}\")",
+        "conflictHint": "Flows run before automations, so this automation won't fire for those messages. Change the keyword, or remove it from the flow and use a Start Flow step here instead."
       },
       "audience": "Audience",
       "audienceNone": "No contacts (run once)",
@@ -1384,9 +1397,21 @@
     },
     "automation": {
       "title": "Automations for this campaign",
-      "empty": "No automations reference this campaign yet. Create one from Automations and choose this campaign in Add Campaign Entry.",
-      "open": "Open builder",
-      "new": "New automation"
+      "subtitle": "{total, plural, one {# automation} other {# automations}} applied · {active} active",
+      "subtitleEmpty": "Nothing is wired to this campaign yet",
+      "emptyTitle": "No automations applied",
+      "empty": "Create an automation that listens for this campaign's keyword and adds an entry, or reacts when someone enters.",
+      "loadError": "Could not load automations for this campaign",
+      "open": "Edit",
+      "new": "New automation",
+      "steps": "{count, plural, one {# step} other {# steps}}",
+      "links": {
+        "entryTrigger": "Runs on new entry",
+        "entryTriggerAny": "Runs on any campaign entry",
+        "scheduledAudience": "Scheduled send to entrants",
+        "keyword": "Keyword: {keyword}",
+        "step": "Step: {step}"
+      }
     },
     "report": {
       "brand": "SPOT ON",
@@ -1497,7 +1522,10 @@
       "whenLabel": "When…",
       "triggerKeywordTitle": "A message contains a keyword",
       "triggerFirstInboundTitle": "Customer's first ever inbound message",
-      "triggerManualTitle": "Manual only (no auto-trigger)",
+      "triggerManualTitle": "Manual only (started by an automation)",
+      "automationConflictTitle": "This flow will block some automations",
+      "automationConflictItem": "Automation \"{automation}\" listens for \"{keyword}\", which this flow captures with \"{flowKeyword}\"",
+      "automationConflictHint": "Flows run before automations, so those automations won't fire for these messages while this flow is active.",
       "keywordsLabel": "Keywords (comma-separated)",
       "keywordsPlaceholder": "support, help, hi",
       "entryNodeTitle": "Entry node:",
@@ -1562,6 +1590,12 @@
         "removeTag": "Remove tag",
         "tagUuidPlaceholder": "Tag UUID",
         "thenAdvanceTo": "Then advance to",
+        "automationLabel": "Automation",
+        "pickAutomation": "Pick an automation…",
+        "noAutomations": "No automations yet. Create one under Automations first.",
+        "automationPaused": "{name} (paused)",
+        "automationPausedHint": "This automation is paused, so the node will skip it until you activate it.",
+        "runAutomationHelp": "Runs the automation's steps for this contact, whatever its trigger, then continues the flow.",
         "mediaTypeLabel": "Media type",
         "imageLabel": "Image (PNG, JPEG, WebP)",
         "videoLabel": "Video (MP4, 3GP)",
@@ -1615,6 +1649,10 @@
           "label": "Tag contact",
           "blurb": "Adds or removes a contact tag"
         },
+        "run_automation": {
+          "label": "Run automation",
+          "blurb": "Runs one of your automations for this contact"
+        },
         "handoff": {
           "label": "Handoff to agent",
           "blurb": "Hands the conversation to a human"
@@ -1657,7 +1695,9 @@
       "modeAdd": "Add",
       "modeRemove": "Remove",
       "tagPicked": "{mode} tag {tag}…",
-      "tagNone": "{mode} tag (none picked)"
+      "tagNone": "{mode} tag (none picked)",
+      "automationPicked": "Automation {id}…",
+      "automationNone": "No automation picked"
     }
   },
   "Settings": {

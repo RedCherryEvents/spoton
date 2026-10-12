@@ -499,7 +499,8 @@ export type AutomationStepType =
   | 'campaign_add_entry'
   | 'campaign_set_status'
   | 'campaign_generate_reference'
-  | 'campaign_set_field';
+  | 'campaign_set_field'
+  | 'start_flow';
 
 export type AutomationLogStatus = 'success' | 'partial' | 'failed';
 
@@ -690,6 +691,10 @@ export interface CampaignSetFieldStepConfig {
   value: string;
 }
 
+export interface StartFlowStepConfig {
+  flow_id: string;
+}
+
 export interface RandomSplitStepConfig {
   /** Probability 0–100 of taking the Yes branch. */
   percent: number;
@@ -765,6 +770,7 @@ export type AutomationStepConfig =
   | CampaignSetStatusStepConfig
   | CampaignGenerateReferenceStepConfig
   | CampaignSetFieldStepConfig
+  | StartFlowStepConfig
   | Record<string, never>
   | Record<string, unknown>;
 

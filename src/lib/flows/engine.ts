@@ -51,6 +51,7 @@ import {
   type FlowRow,
   type FlowRunRow,
   type ParsedInbound,
+  type RunAutomationNodeConfig,
   type SendButtonsNodeConfig,
   type SendListNodeConfig,
   type SendMediaNodeConfig,
@@ -140,7 +141,8 @@ export function isAutoAdvancing(node_type: string): boolean {
     node_type === "send_message" ||
     node_type === "send_media" ||
     node_type === "condition" ||
-    node_type === "set_tag"
+    node_type === "set_tag" ||
+    node_type === "run_automation"
   );
 }
 
@@ -770,6 +772,37 @@ async function advanceFromNodeKey(
       currentKey = cfg.next_node_key;
       continue;
     }
+    if (node.node_type === "run_automation") {
+      const cfg = node.config as unknown as RunAutomationNodeConfig;
+      try {
+        // Dynamic import: the automations engine dynamically imports this
+        // module for its start_flow step, so a static import would cycle.
+        const { runAutomationById } = await import("@/lib/automations/engine");
+        const result = await runAutomationById({
+          accountId: run.account_id,
+          automationId: cfg.automation_id,
+          contactId: run.contact_id,
+          context: {
+            conversation_id: run.conversation_id ?? undefined,
+            vars: run.vars,
+          },
+          triggerEvent: `flow:${run.flow_id}`,
+        });
+        await logEvent(db, run.id, "node_entered", node.node_key, {
+          automation_id: cfg.automation_id,
+          automation_result: result,
+        });
+      } catch (err) {
+        // Non-fatal like set_tag — a broken automation shouldn't strand
+        // the customer mid-flow.
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "run_automation_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+      currentKey = cfg.next_node_key;
+      continue;
+    }
     if (node.node_type === "send_buttons") {
       await sendButtonsAndSuspend(db, run, node);
       // Persist the new current_node_key via optimistic UPDATE.
@@ -909,7 +942,16 @@ export async function dispatchInboundToFlows(
       return { consumed: false, outcome: "no_match" };
     }
     const nodes = await loadAllNodes(db, flow.id);
-    return startNewRun(db, flow, input, nodes);
+    return startNewRun(
+      db,
+      flow,
+      {
+        contactId: input.contactId,
+        conversationId: input.conversationId,
+        metaMessageId: input.message.meta_message_id,
+      },
+      nodes,
+    );
   } catch (err) {
     console.error(
       "[flows] dispatchInboundToFlows threw:",
@@ -917,6 +959,67 @@ export async function dispatchInboundToFlows(
     );
     return { consumed: false, outcome: "no_match" };
   }
+}
+
+export type StartFlowForContactResult =
+  | { started: true; flow_run_id: string; outcome: DispatchInboundResult["outcome"] }
+  | {
+      started: false;
+      reason:
+        | "flow_not_found"
+        | "flow_not_active"
+        | "flow_has_no_entry"
+        | "already_in_this_flow"
+        | "already_in_another_flow"
+        | "start_failed";
+    };
+
+/**
+ * Start a flow for a contact outside the inbound-trigger path — used by
+ * the automations `start_flow` step. Any trigger type is allowed (a
+ * `manual` flow can only be started this way), but the flow must be
+ * active and belong to `accountId`. A contact can only be in one flow at
+ * a time, which also stops flow → automation → flow loops.
+ */
+export async function startFlowForContact(input: {
+  accountId: string;
+  flowId: string;
+  contactId: string;
+  conversationId: string;
+  startedBy: string;
+}): Promise<StartFlowForContactResult> {
+  const db = supabaseAdmin();
+  const flow = await loadFlow(db, input.flowId);
+  if (!flow || flow.account_id !== input.accountId) {
+    return { started: false, reason: "flow_not_found" };
+  }
+  if (flow.status !== "active") return { started: false, reason: "flow_not_active" };
+  if (!flow.entry_node_id) return { started: false, reason: "flow_has_no_entry" };
+
+  const existing = await loadActiveRunForContact(db, input.accountId, input.contactId);
+  if (existing) {
+    return {
+      started: false,
+      reason: existing.flow_id === flow.id ? "already_in_this_flow" : "already_in_another_flow",
+    };
+  }
+
+  const nodes = await loadAllNodes(db, flow.id);
+  const result = await startNewRun(
+    db,
+    flow,
+    {
+      contactId: input.contactId,
+      conversationId: input.conversationId,
+      metaMessageId: null,
+      startedBy: input.startedBy,
+    },
+    nodes,
+  );
+  if (!result.consumed || !result.flow_run_id) {
+    return { started: false, reason: "start_failed" };
+  }
+  return { started: true, flow_run_id: result.flow_run_id, outcome: result.outcome };
 }
 
 async function handleReplyForActiveRun(
@@ -1086,10 +1189,19 @@ async function handleReplyForActiveRun(
   return { consumed: true, flow_run_id: run.id, outcome: "completed" };
 }
 
+interface NewRunStart {
+  contactId: string;
+  conversationId: string;
+  /** Inbound that triggered the start; null when started by an automation. */
+  metaMessageId: string | null;
+  /** e.g. `automation:<id>` — recorded on the `started` event. */
+  startedBy?: string;
+}
+
 async function startNewRun(
   db: AdminClient,
   flow: FlowRow,
-  input: DispatchInboundInput,
+  input: NewRunStart,
   nodes: Map<string, FlowNodeRow>,
 ): Promise<DispatchInboundResult> {
   // INSERT — partial unique index `idx_one_active_run_per_contact`
@@ -1127,7 +1239,8 @@ async function startNewRun(
   await logEvent(db, run.id, "started", flow.entry_node_id, {
     flow_id: flow.id,
     trigger_type: flow.trigger_type,
-    meta_message_id: input.message.meta_message_id,
+    meta_message_id: input.metaMessageId,
+    ...(input.startedBy ? { started_by: input.startedBy } : {}),
   });
   // Bump the flow's execution counter — used by the builder UI to
   // surface "X runs since activation" on the flow card.
