@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  NO_CAMPAIGN,
+  groupConversationsByCampaign,
   matchesContactFilters,
   normalizeConversation,
 } from "./conversations";
@@ -7,13 +9,15 @@ import type { Conversation } from "@/types";
 
 function makeConversation(
   contact: Partial<Conversation["contact"]> | null,
+  id = "c1",
+  unread = 0,
 ): Conversation {
   return {
-    id: "c1",
+    id,
+    unread_count: unread,
     user_id: "u1",
     contact_id: "ct1",
     status: "open",
-    unread_count: 0,
     created_at: "",
     updated_at: "",
     contact: contact
@@ -141,5 +145,91 @@ describe("normalizeConversation", () => {
     };
     // A contactless row passes through untouched (consumers use `?.`).
     expect(normalizeConversation(raw).contact).toBeNull();
+  });
+
+  it("flattens campaign_entries into distinct campaign_ids, newest entry first", () => {
+    const raw = {
+      id: "c1",
+      user_id: "u1",
+      contact_id: "ct1",
+      status: "open" as const,
+      unread_count: 0,
+      created_at: "",
+      updated_at: "",
+      contact: {
+        id: "ct1",
+        user_id: "u1",
+        account_id: "a1",
+        phone: "123",
+        created_at: "",
+        updated_at: "",
+        campaign_entries: [
+          { campaign_id: "icc", created_at: "2026-10-01T10:00:00Z" },
+          { campaign_id: "coke", created_at: "2026-10-13T10:00:00Z" },
+          { campaign_id: "icc", created_at: "2026-10-05T10:00:00Z" },
+        ],
+      },
+    };
+    const contact = normalizeConversation(raw).contact as unknown as Record<string, unknown>;
+    expect(contact.campaign_ids).toEqual(["coke", "icc"]);
+    expect(contact.campaign_entries).toBeUndefined();
+  });
+
+  it("leaves campaign_ids unset when entries weren't selected", () => {
+    const raw = {
+      id: "c1",
+      user_id: "u1",
+      contact_id: "ct1",
+      status: "open" as const,
+      unread_count: 0,
+      created_at: "",
+      updated_at: "",
+      contact: {
+        id: "ct1",
+        user_id: "u1",
+        account_id: "a1",
+        phone: "123",
+        created_at: "",
+        updated_at: "",
+      },
+    };
+    expect(normalizeConversation(raw).contact).not.toHaveProperty("campaign_ids");
+  });
+});
+
+describe("campaign filter", () => {
+  const inCoke = makeConversation({ campaign_ids: ["coke", "icc"] });
+  const inNone = makeConversation({ campaign_ids: [] });
+
+  it("matches any campaign the contact has an entry in", () => {
+    expect(matchesContactFilters(inCoke, { tagIds: [], company: null, campaignId: "icc" })).toBe(true);
+    expect(matchesContactFilters(inCoke, { tagIds: [], company: null, campaignId: "bmw" })).toBe(false);
+  });
+
+  it("matches only contacts with no entries for NO_CAMPAIGN", () => {
+    expect(matchesContactFilters(inNone, { tagIds: [], company: null, campaignId: NO_CAMPAIGN })).toBe(true);
+    expect(matchesContactFilters(makeConversation(null), { tagIds: [], company: null, campaignId: NO_CAMPAIGN })).toBe(true);
+    expect(matchesContactFilters(inCoke, { tagIds: [], company: null, campaignId: NO_CAMPAIGN })).toBe(false);
+  });
+});
+
+describe("groupConversationsByCampaign", () => {
+  it("groups each conversation once under its newest campaign, keeping order and putting no-campaign last", () => {
+    const groups = groupConversationsByCampaign([
+      makeConversation({ campaign_ids: [] }, "a", 2),
+      makeConversation({ campaign_ids: ["coke", "icc"] }, "b", 11),
+      makeConversation({ campaign_ids: ["icc"] }, "c", 0),
+      makeConversation(null, "d", 1),
+      makeConversation({ campaign_ids: ["coke"] }, "e", 0),
+    ]);
+    expect(groups.map((g) => [g.key, g.conversations.map((c) => c.id), g.unread])).toEqual([
+      ["coke", ["b", "e"], 11],
+      ["icc", ["c"], 0],
+      [NO_CAMPAIGN, ["a", "d"], 3],
+    ]);
+  });
+
+  it("returns no groups for an empty list", () => {
+    expect(groupConversationsByCampaign([])).toEqual([]);
   });
 });

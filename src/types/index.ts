@@ -113,6 +113,9 @@ export interface Contact {
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
    *  Inbox conversation list, for tag filtering). Absent otherwise. */
   tags?: Tag[];
+  /** Campaigns the contact has entries in, newest entry first. Hydrated
+   *  by the Inbox conversation select only. */
+  campaign_ids?: string[];
 }
 
 export interface Tag {

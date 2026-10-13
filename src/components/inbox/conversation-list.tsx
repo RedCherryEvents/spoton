@@ -1,15 +1,24 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
-  CONVERSATION_SELECT,
+  INBOX_CONVERSATION_SELECT,
+  NO_CAMPAIGN,
+  groupConversationsByCampaign,
   matchesContactFilters,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
-import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import type { Campaign, Conversation, ConversationStatus, Tag } from "@/types";
+import { Search, ChevronDown, ChevronRight, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -18,6 +27,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -46,6 +56,20 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 
 type InboxFilter = ConversationStatus | "all" | "unread";
 
+type CampaignOption = Pick<Campaign, "id" | "name" | "status">;
+
+const GROUP_BY_CAMPAIGN_KEY = "inbox.groupByCampaign";
+const GROUP_BY_CAMPAIGN_EVENT = "inbox:group-by-campaign";
+
+function subscribeGroupByCampaign(onChange: () => void) {
+  window.addEventListener(GROUP_BY_CAMPAIGN_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(GROUP_BY_CAMPAIGN_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
 export function ConversationList({
   activeConversationId,
   onSelect,
@@ -72,6 +96,15 @@ export function ConversationList({
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+  // Campaign membership comes from campaign entries embedded on the contact.
+  const [campaigns, setCampaigns] = useState<CampaignOption[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const groupByCampaign = useSyncExternalStore(
+    subscribeGroupByCampaign,
+    () => window.localStorage.getItem(GROUP_BY_CAMPAIGN_KEY) === "1",
+    () => false
+  );
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -97,7 +130,7 @@ export function ConversationList({
     (async () => {
       const { data, error } = await supabase
         .from("conversations")
-        .select(CONVERSATION_SELECT)
+        .select(INBOX_CONVERSATION_SELECT)
         .order("last_message_at", { ascending: false });
 
       if (cancelled) return;
@@ -140,6 +173,51 @@ export function ConversationList({
     };
   }, []);
 
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("campaigns")
+        .select("id, name, status")
+        .order("name");
+      if (!cancelled && data) setCampaigns(data as CampaignOption[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggleGroupByCampaign = useCallback(() => {
+    window.localStorage.setItem(GROUP_BY_CAMPAIGN_KEY, groupByCampaign ? "0" : "1");
+    window.dispatchEvent(new Event(GROUP_BY_CAMPAIGN_EVENT));
+  }, [groupByCampaign]);
+
+  const toggleGroup = useCallback((key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const campaignsById = useMemo(() => {
+    const m = new Map<string, CampaignOption>();
+    for (const c of campaigns) m.set(c.id, c);
+    return m;
+  }, [campaigns]);
+
+  // Archived campaigns stay out of the picker unless a conversation is
+  // still in one.
+  const campaignOptions = useMemo(() => {
+    const inUse = new Set<string>();
+    for (const c of conversations) {
+      for (const id of c.contact?.campaign_ids ?? []) inUse.add(id);
+    }
+    return campaigns.filter((c) => c.status !== "archived" || inUse.has(c.id));
+  }, [campaigns, conversations]);
+
   // Company options are derived from the loaded conversations — there's no
   // separate companies table, and only companies with a live conversation
   // are worth offering as an inbox filter.
@@ -167,12 +245,18 @@ export function ConversationList({
       result = result.filter((c) => c.status === filter);
     }
 
-    // Contact-based filters (tags via OR logic, exact company match).
-    if (selectedTagIds.length > 0 || selectedCompany !== null) {
+    // Contact-based filters (tags via OR logic, exact company match,
+    // campaign membership).
+    if (
+      selectedTagIds.length > 0 ||
+      selectedCompany !== null ||
+      selectedCampaignId !== null
+    ) {
       result = result.filter((c) =>
         matchesContactFilters(c, {
           tagIds: selectedTagIds,
           company: selectedCompany,
+          campaignId: selectedCampaignId,
         })
       );
     }
@@ -188,7 +272,20 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
+  }, [conversations, filter, search, selectedTagIds, selectedCompany, selectedCampaignId]);
+
+  const groups = useMemo(
+    () => (groupByCampaign ? groupConversationsByCampaign(filtered) : null),
+    [groupByCampaign, filtered]
+  );
+
+  const campaignLabel = useCallback(
+    (id: string) =>
+      id === NO_CAMPAIGN
+        ? t("noCampaign")
+        : campaignsById.get(id)?.name ?? t("unknownCampaign"),
+    [campaignsById, t]
+  );
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -199,9 +296,13 @@ export function ConversationList({
   const clearContactFilters = useCallback(() => {
     setSelectedTagIds([]);
     setSelectedCompany(null);
+    setSelectedCampaignId(null);
   }, []);
 
-  const hasContactFilters = selectedTagIds.length > 0 || selectedCompany !== null;
+  const hasContactFilters =
+    selectedTagIds.length > 0 ||
+    selectedCompany !== null ||
+    selectedCampaignId !== null;
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -350,6 +451,53 @@ export function ConversationList({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+
+          {campaignOptions.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  "inline-flex max-w-40 items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                  selectedCampaignId || groupByCampaign
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span className="truncate">
+                  {selectedCampaignId ? campaignLabel(selectedCampaignId) : t("campaign")}
+                </span>
+                <ChevronDown className="h-3 w-3 shrink-0" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="max-h-72 w-56 border-border bg-popover"
+              >
+                <DropdownMenuCheckboxItem
+                  checked={groupByCampaign}
+                  onCheckedChange={toggleGroupByCampaign}
+                  className="text-sm text-popover-foreground"
+                >
+                  {t("groupByCampaign")}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                {[null, ...campaignOptions.map((c) => c.id), NO_CAMPAIGN].map((id) => (
+                  <DropdownMenuItem
+                    key={id ?? "all"}
+                    onClick={() => setSelectedCampaignId(id)}
+                    className={cn(
+                      "text-sm",
+                      selectedCampaignId === id
+                        ? "text-primary"
+                        : "text-popover-foreground"
+                    )}
+                  >
+                    <span className="truncate">
+                      {id === null ? t("allCampaigns") : campaignLabel(id)}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
 
         {hasContactFilters && (
@@ -380,6 +528,15 @@ export function ConversationList({
                 <X className="h-3 w-3" />
               </button>
             )}
+            {selectedCampaignId && (
+              <button
+                onClick={() => setSelectedCampaignId(null)}
+                className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-foreground hover:bg-muted/70"
+              >
+                <span className="max-w-24 truncate">{campaignLabel(selectedCampaignId)}</span>
+                <X className="h-3 w-3" />
+              </button>
+            )}
             <button
               onClick={clearContactFilters}
               className="px-1 text-[11px] text-muted-foreground hover:text-foreground"
@@ -404,6 +561,53 @@ export function ConversationList({
         ) : filtered.length === 0 ? (
           <div className="px-4 py-12 text-center">
             <p className="text-sm text-muted-foreground">{t("noConversations")}</p>
+          </div>
+        ) : groups ? (
+          <div className="flex flex-col">
+            {groups.map((group) => {
+              const collapsed = collapsedGroups.has(group.key);
+              return (
+                <div key={group.key} className="border-b border-border last:border-b-0">
+                  <button
+                    onClick={() => toggleGroup(group.key)}
+                    aria-expanded={!collapsed}
+                    className="sticky top-0 z-10 flex w-full items-center gap-1.5 bg-card px-3 py-2 text-left hover:bg-muted/50"
+                  >
+                    {collapsed ? (
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    )}
+                    <span
+                      className={cn(
+                        "truncate text-xs font-semibold uppercase tracking-wide",
+                        group.key === NO_CAMPAIGN ? "text-muted-foreground" : "text-foreground"
+                      )}
+                    >
+                      {campaignLabel(group.key)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {group.conversations.length}
+                    </span>
+                    {group.unread > 0 && (
+                      <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                        {group.unread}
+                      </span>
+                    )}
+                  </button>
+                  {!collapsed &&
+                    group.conversations.map((conv) => (
+                      <ConversationItem
+                        key={conv.id}
+                        conversation={conv}
+                        isActive={conv.id === activeConversationId}
+                        onSelect={handleSelect}
+                        t={t}
+                      />
+                    ))}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="flex flex-col">
