@@ -1,5 +1,7 @@
 import type { AutomationTriggerType } from '@/types'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
+import { videoPageSite } from '@/lib/whatsapp/media-url'
+import type { StepPath } from './builder-tree'
 
 // ------------------------------------------------------------
 // Pre-flight config validation for automations about to be activated.
@@ -19,6 +21,8 @@ export interface ValidationIssue {
   /** Dot-path for the UI to highlight; stable enough to build a table. */
   path: string
   message: string
+  /** Type of the step `path` points at, so the UI can name it. */
+  step_type?: string
 }
 
 interface StepLike {
@@ -41,14 +45,89 @@ export function validateStepsForActivation(steps: StepLike[]): ValidationIssue[]
 }
 
 function walk(steps: StepLike[], prefix: string, issues: ValidationIssue[]): void {
+  forEachStep(steps, prefix, (s, path) => validateOne(s, path, issues))
+}
+
+function forEachStep(
+  steps: StepLike[],
+  prefix: string,
+  visit: (step: StepLike, path: string) => void,
+): void {
+  if (!Array.isArray(steps)) return
   steps.forEach((s, i) => {
     const path = `${prefix}steps[${i}]`
-    validateOne(s, path, issues)
+    visit(s, path)
     if (s.branches) {
-      if (s.branches.yes) walk(s.branches.yes, `${path}.yes.`, issues)
-      if (s.branches.no) walk(s.branches.no, `${path}.no.`, issues)
+      if (s.branches.yes) forEachStep(s.branches.yes, `${path}.yes.`, visit)
+      if (s.branches.no) forEachStep(s.branches.no, `${path}.no.`, visit)
     }
   })
+}
+
+export interface StepReferences {
+  /** The account's flows that a `start_flow` step may point at. */
+  flows: { id: string; name: string; status: string }[]
+}
+
+/** Flow ids referenced by `start_flow` steps, anywhere in the tree. */
+export function referencedFlowIds(steps: StepLike[]): string[] {
+  const ids = new Set<string>()
+  forEachStep(steps, '', (s) => {
+    const id = s.step_config?.flow_id
+    if (s.step_type === 'start_flow' && nonEmpty(id)) ids.add(String(id).trim())
+  })
+  return [...ids]
+}
+
+/**
+ * Activation checks that need other records: a `start_flow` step must
+ * point at a flow that exists in the account and is active, otherwise
+ * every run would fail at that step. Empty ids are left to
+ * validateStepsForActivation, which already reports them.
+ */
+export function validateStepReferences(
+  steps: StepLike[],
+  refs: StepReferences,
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = []
+  const flows = new Map(refs.flows.map((f) => [f.id, f]))
+  forEachStep(steps, '', (s, path) => {
+    const id = s.step_config?.flow_id
+    if (s.step_type !== 'start_flow' || !nonEmpty(id)) return
+    const flow = flows.get(String(id).trim())
+    if (!flow) {
+      issues.push({
+        path: `${path}.flow_id`,
+        message: 'the selected flow no longer exists, pick another flow',
+      })
+    } else if (flow.status !== 'active') {
+      issues.push({
+        path: `${path}.flow_id`,
+        message: `flow "${flow.name}" is not active, activate it or pick another flow`,
+      })
+    }
+  })
+  return issues
+}
+
+/**
+ * Turns an issue path like `steps[2].yes.steps[0].text` back into the
+ * builder's StepPath plus the offending field. Null for paths that
+ * don't address a step (`steps`, `trigger.*`).
+ */
+export function issueStepPath(path: string): { path: StepPath; field?: string } | null {
+  const head = /^steps\[(\d+)\]/.exec(path)
+  if (!head) return null
+  const markers: StepPath = [{ kind: 'root', index: Number(head[1]) }]
+  let rest = path.slice(head[0].length)
+  for (;;) {
+    const branch = /^\.(yes|no)\.steps\[(\d+)\]/.exec(rest)
+    if (!branch) break
+    markers.push({ kind: 'branch', branch: branch[1] as 'yes' | 'no', index: Number(branch[2]) })
+    rest = rest.slice(branch[0].length)
+  }
+  const field = /^\.(\w+)$/.exec(rest)?.[1]
+  return field ? { path: markers, field } : { path: markers }
 }
 
 function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): void {
@@ -150,14 +229,22 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
     case 'close_conversation':
     case 'end':
       break
-    case 'send_media':
+    case 'send_media': {
       if (!nonEmpty(c.url)) {
         issues.push({ path: `${path}.url`, message: 'media URL is required' })
+      }
+      const site = nonEmpty(c.url) ? videoPageSite(String(c.url)) : null
+      if (site) {
+        issues.push({
+          path: `${path}.url`,
+          message: `${site} links can't be sent as media, send the link in a Send Message step instead`,
+        })
       }
       if (!['image', 'video', 'document', 'audio'].includes(String(c.media_type))) {
         issues.push({ path: `${path}.media_type`, message: 'media type is required' })
       }
       break
+    }
     case 'ask_question':
       if (!nonEmpty(c.text)) {
         issues.push({ path: `${path}.text`, message: 'question text is required' })
@@ -263,6 +350,22 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
     default:
       issues.push({ path, message: `unknown step type: ${step.step_type}` })
   }
+}
+
+/** Adds `step_type` to every issue whose path resolves to a step. */
+export function annotateIssues(issues: ValidationIssue[], steps: StepLike[]): ValidationIssue[] {
+  return issues.map((issue) => {
+    const loc = issueStepPath(issue.path)
+    if (!loc || !Array.isArray(steps)) return issue
+    let bucket: StepLike[] | undefined = steps
+    let step: StepLike | undefined
+    for (const marker of loc.path) {
+      if (marker.kind === 'branch') bucket = step?.branches?.[marker.branch]
+      step = bucket?.[marker.index]
+      if (!step) return issue
+    }
+    return step ? { ...issue, step_type: step.step_type } : issue
+  })
 }
 
 export function validateTriggerForActivation(

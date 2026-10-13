@@ -7,6 +7,8 @@ import { toast } from 'sonner'
 import { FileText, Loader2, Pencil, Plus, Zap } from 'lucide-react'
 import type { CampaignAutomationLink, CampaignAutomationSummary } from '@/lib/campaigns/automation-links'
 import { triggerMeta, formatRelative } from '@/lib/automations/trigger-meta'
+import type { ValidationIssue } from '@/lib/automations/validate'
+import { issueToast } from '@/components/automations/issue-toast'
 import { useCan } from '@/hooks/use-can'
 import { Button } from '@/components/ui/button'
 import { GatedButton } from '@/components/ui/gated-button'
@@ -17,6 +19,7 @@ export function CampaignAutomationTab({ campaignId }: { campaignId: string }) {
   const t = useTranslations('Campaigns.automation')
   const tList = useTranslations('Automations.list')
   const tSteps = useTranslations('Automations.builder.steps')
+  const tBuilder = useTranslations('Automations.builder')
   const router = useRouter()
   const canEdit = useCan('send-messages')
   const [rows, setRows] = useState<CampaignAutomationSummary[] | null>(null)
@@ -56,7 +59,15 @@ export function CampaignAutomationTab({ campaignId }: { campaignId: string }) {
     if (!res.ok) {
       setRows((prev) => prev?.map((r) => (r.id === row.id ? { ...r, is_active: !next } : r)) ?? prev)
       const body = await res.json().catch(() => ({}))
-      toast.error(body?.error ?? tList('toasts.updateError'))
+      const issue: ValidationIssue | undefined = body?.issues?.[0]
+      if (issue?.message) {
+        const { title, description } = issueToast(issue, tBuilder)
+        toast.error(tList('toasts.cannotActivate', { name: row.name }), {
+          description: description ? `${title}: ${description}` : title,
+        })
+      } else {
+        toast.error(body?.error ?? tList('toasts.updateError'))
+      }
       return
     }
     toast.success(next ? tList('toasts.activated') : tList('toasts.paused'))

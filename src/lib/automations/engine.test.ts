@@ -128,13 +128,25 @@ vi.mock("./meta-send", () => ({
   engineSendMedia: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
 }));
 
+vi.mock("./campaign-ops", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./campaign-ops")>()),
+  addCampaignEntry: vi.fn(),
+  loadCampaign: vi.fn(async () => null),
+}));
+
+vi.mock("@/lib/flows/engine", () => ({
+  startFlowForContact: vi.fn(),
+}));
+
 import {
   runAutomationsForTrigger,
   triggerMatches,
   interpolateTemplate,
   tryResumeInboundWait,
 } from "./engine";
-import { engineSendText, engineSendInteractive } from "./meta-send";
+import { engineSendText, engineSendInteractive, engineSendMedia } from "./meta-send";
+import { addCampaignEntry } from "./campaign-ops";
+import { startFlowForContact } from "@/lib/flows/engine";
 import type { Automation, KeywordMatchTriggerConfig } from "@/types";
 
 const ACCOUNT = "acct-1";
@@ -806,5 +818,161 @@ describe("validate — on_invalid retry", () => {
       status: "failed",
       error_message: "validate failed: answer (regex)",
     }));
+  });
+});
+
+describe("start_flow", () => {
+  it("passes the saved flow id to the flows engine", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [step(0, "start_flow", { flow_id: "flow-9" })];
+    vi.mocked(startFlowForContact).mockResolvedValue({
+      started: true,
+      flow_run_id: "run-1",
+      outcome: "started",
+    });
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "hi", conversation_id: "conv1" },
+    });
+
+    expect(startFlowForContact).toHaveBeenCalledWith({
+      accountId: ACCOUNT,
+      flowId: "flow-9",
+      contactId: "c1",
+      conversationId: "conv1",
+      startedBy: "automation:a1",
+    });
+    expect(h.state.logUpdates.at(-1)).toMatchObject({ status: "success" });
+  });
+
+  it("fails the run with a clear error when no flow is selected", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [step(0, "start_flow", { flow_id: "" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "hi", conversation_id: "conv1" },
+    });
+
+    expect(startFlowForContact).not.toHaveBeenCalled();
+    expect(h.state.logUpdates).toContainEqual(expect.objectContaining({
+      status: "failed",
+      error_message: "start_flow needs contact + flow_id",
+    }));
+  });
+
+  it("reports a flow that is no longer active instead of skipping silently", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [step(0, "start_flow", { flow_id: "flow-9" })];
+    vi.mocked(startFlowForContact).mockResolvedValue({ started: false, reason: "flow_not_active" });
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "hi", conversation_id: "conv1" },
+    });
+
+    expect(h.state.logUpdates).toContainEqual(expect.objectContaining({
+      status: "failed",
+      error_message: "start_flow failed: flow not active",
+    }));
+  });
+});
+
+describe("campaign_add_entry", () => {
+  it("records the entry for the configured campaign without needing a flow", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [
+      step(0, "campaign_add_entry", { campaign_id: "camp-coke" }),
+      step(1, "send_message", { text: "Your reference: {{ entry.reference }}" }),
+    ];
+    vi.mocked(addCampaignEntry).mockResolvedValue({
+      entry: { id: "e1", status: "in_progress", entry_reference: "COKE-0001" },
+      created: false,
+      duplicate: false,
+    } as unknown as Awaited<ReturnType<typeof addCampaignEntry>>);
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "WINCOKE", conversation_id: "conv1" },
+    });
+
+    expect(addCampaignEntry).toHaveBeenCalledTimes(1);
+    expect(addCampaignEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: ACCOUNT, campaignId: "camp-coke", contactId: "c1" }),
+    );
+    expect(startFlowForContact).not.toHaveBeenCalled();
+    expect(engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Your reference: COKE-0001" }),
+    );
+  });
+});
+
+describe("send_media", () => {
+  it("sends a direct video file as media", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [step(0, "send_media", { media_type: "video", url: "https://cdn.example.com/coke.mp4", caption: "Win With Coke!" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "WINCOKE", conversation_id: "conv1" },
+    });
+
+    expect(engineSendMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "video", link: "https://cdn.example.com/coke.mp4", caption: "Win With Coke!" }),
+    );
+    expect(h.state.logUpdates.at(-1)).toMatchObject({ status: "success" });
+  });
+
+  it("fails clearly on a YouTube page instead of handing it to Meta as a video", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [step(0, "send_media", { media_type: "video", url: "https://youtu.be/0Ab-F7Y3IXc" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "WINCOKE", conversation_id: "conv1" },
+    });
+
+    expect(engineSendMedia).not.toHaveBeenCalled();
+    expect(h.state.logUpdates).toContainEqual(expect.objectContaining({
+      status: "failed",
+      error_message: "send_media cannot send a YouTube link as media; use a send_message step",
+    }));
+  });
+
+  it("sends the YouTube link as a normal text message", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [step(0, "send_message", { text: "Win With Coke!\nhttps://youtu.be/0Ab-F7Y3IXc" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "WINCOKE", conversation_id: "conv1" },
+    });
+
+    expect(engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Win With Coke!\nhttps://youtu.be/0Ab-F7Y3IXc" }),
+    );
+    expect(h.state.logUpdates.at(-1)).toMatchObject({ status: "success" });
   });
 });

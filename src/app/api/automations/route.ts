@@ -5,9 +5,11 @@ import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { getTemplate } from '@/lib/automations/templates'
 import { insertSteps, type BuilderStepInput } from '@/lib/automations/steps-tree'
 import {
+  annotateIssues,
   validateStepsForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
+import { loadStepReferenceIssues } from '@/lib/automations/validate-refs'
 
 export async function GET() {
   const supabase = await createClient()
@@ -90,15 +92,23 @@ export async function POST(request: Request) {
   // (is_active=false) are allowed to be incomplete so users can save
   // progress mid-build.
   if (is_active) {
+    const stepsToCheck = (effectiveSteps ?? []) as unknown as {
+      step_type: string
+      step_config: Record<string, unknown>
+    }[]
     const issues = [
       ...validateTriggerForActivation(effectiveTriggerType, effectiveTriggerConfig ?? {}),
-      ...validateStepsForActivation(
-        (effectiveSteps ?? []) as unknown as { step_type: string; step_config: Record<string, unknown> }[],
-      ),
+      ...validateStepsForActivation(stepsToCheck),
     ]
+    if (issues.length === 0) {
+      issues.push(...(await loadStepReferenceIssues(accountId, stepsToCheck)))
+    }
     if (issues.length > 0) {
       return NextResponse.json(
-        { error: 'Cannot activate automation with invalid configuration', issues },
+        {
+          error: 'Cannot activate automation with invalid configuration',
+          issues: annotateIssues(issues, stepsToCheck),
+        },
         { status: 400 },
       )
     }

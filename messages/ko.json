@@ -905,6 +905,7 @@
         "duplicated": "자동화가 복제되었습니다",
         "deleted": "자동화가 삭제되었습니다",
         "updateError": "업데이트하지 못했습니다",
+        "cannotActivate": "\"{name}\"을(를) 켤 수 없습니다",
         "duplicateError": "복제하지 못했습니다",
         "deleteError": "삭제하지 못했습니다"
       }
@@ -984,7 +985,8 @@
         "select": "캠페인 선택…",
         "any": "모든 캠페인",
         "placeholder": "캠페인 id",
-        "unknown": "{id} (알 수 없는 캠페인)"
+        "unknown": "{id} (알 수 없는 캠페인)",
+        "useSuggested": "{name} 사용 (이 자동화의 트리거와 일치)"
       },
       "flows": {
         "label": "플로우",
@@ -992,7 +994,8 @@
         "draftName": "{name} (비활성)",
         "unknown": "{id} (알 수 없는 플로우)",
         "none": "아직 플로우가 없습니다. 먼저 플로우에서 만드세요.",
-        "notActiveHint": "이 플로우는 비활성 상태라 활성화할 때까지 이 단계가 건너뛰어집니다.",
+        "notActiveHint": "이 플로우는 비활성 상태입니다. 이 자동화를 켜기 전에 플로우를 활성화하세요.",
+        "campaignHint": "캠페인 참여를 기록하려면 캠페인 아래의 캠페인 참가 추가를 사용하세요. 플로우가 필요하지 않습니다.",
         "help": "이 연락처에 대해 플로우를 시작합니다. 이미 플로우 진행 중이면 건너뜁니다. 팁: 플로우 트리거를 \"수동 전용\"으로 설정하면 자동화에서만 실행됩니다.",
         "conflictTitle": "플로우가 이 메시지를 먼저 처리합니다",
         "conflictItem": "\"{keyword}\"은(는) 플로우 \"{flow}\"도 시작합니다 (키워드 \"{flowKeyword}\")",
@@ -1111,6 +1114,9 @@
         "yes": "예",
         "no": "아니요"
       },
+      "issues": {
+        "atStep": "{number}단계 · {step}"
+      },
       "addStep": "단계 추가",
       "delete": "삭제",
       "config": {
@@ -1173,6 +1179,8 @@
         "mediaDocument": "문서",
         "mediaAudio": "오디오",
         "mediaUrl": "공개 미디어 URL",
+        "mediaPageLink": "{site} 페이지 링크이며 미디어 파일이 아닙니다. WhatsApp은 직접 파일 링크(MP4, JPG, PDF 등)만 미디어로 보낼 수 있습니다.",
+        "mediaSendAsLink": "텍스트 링크로 보내기",
         "caption": "캡션",
         "questionText": "질문",
         "varKey": "답변 저장 키",

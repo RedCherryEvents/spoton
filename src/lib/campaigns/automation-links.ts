@@ -69,6 +69,45 @@ export function campaignAutomationLinks(
   return links
 }
 
+/**
+ * The one campaign an automation is about, read from its own setup:
+ * a `campaign_entry` trigger pinned to a campaign, a keyword trigger that
+ * listens for exactly one campaign's code or keyword, or campaign steps
+ * that all name the same campaign. Null whenever that's ambiguous, so
+ * callers never guess between campaigns.
+ */
+export function inferAutomationCampaignId(
+  automation: LinkAutomation,
+  steps: LinkStep[],
+  campaigns: LinkCampaign[],
+): string | null {
+  const known = new Set(campaigns.map((c) => c.id))
+  const cfg = (automation.trigger_config ?? {}) as Record<string, unknown>
+
+  if (
+    automation.trigger_type === 'campaign_entry' &&
+    typeof cfg.campaign_id === 'string' &&
+    known.has(cfg.campaign_id)
+  ) {
+    return cfg.campaign_id
+  }
+
+  if (automation.trigger_type === 'keyword_match') {
+    const matches = campaigns.filter((c) =>
+      campaignAutomationLinks(c, automation, []).some((l) => l.kind === 'keyword'),
+    )
+    if (matches.length === 1) return matches[0].id
+    if (matches.length > 1) return null
+  }
+
+  const fromSteps = new Set<string>()
+  for (const step of steps) {
+    const id = (step.step_config as Record<string, unknown> | null)?.campaign_id
+    if (typeof id === 'string' && known.has(id)) fromSteps.add(id)
+  }
+  return fromSteps.size === 1 ? [...fromSteps][0] : null
+}
+
 /** Pinned links first, catch-all `entry_trigger_any` last; active before paused. */
 export function sortCampaignAutomations(
   rows: CampaignAutomationSummary[],

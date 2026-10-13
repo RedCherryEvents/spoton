@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  annotateIssues,
+  issueStepPath,
+  referencedFlowIds,
+  validateStepReferences,
   validateStepsForActivation,
   validateTriggerForActivation,
 } from "./validate";
@@ -359,5 +363,167 @@ describe("validateStepsForActivation — reply waits", () => {
     expect(run(1)).toEqual(["steps[0].max_attempts"]);
     expect(run(11)).toEqual(["steps[0].max_attempts"]);
     expect(run(3)).toEqual([]);
+  });
+});
+
+// The Coca-Cola automation as saved: step 5 is a Start Flow step with no
+// flow picked, and there is no campaign_add_entry step at all.
+const COKE_STEPS = [
+  { step_type: "send_message", step_config: { text: "Welcome to Coca-Cola!" } },
+  { step_type: "send_media", step_config: { url: "https://cdn.example.com/coke.mp4", media_type: "video" } },
+  { step_type: "ask_question", step_config: { text: "Who will you share a Coke with?", var_key: "answer" } },
+  { step_type: "send_message", step_config: { text: "{{ entry.reference }} thanks" } },
+  { step_type: "start_flow", step_config: { flow_id: "" } },
+];
+
+describe("Start Flow vs Add Campaign Entry", () => {
+  it("only Start Flow needs a flow: the Coca-Cola error comes from step 5 being start_flow", () => {
+    const issues = annotateIssues(validateStepsForActivation(COKE_STEPS), COKE_STEPS);
+    expect(issues).toEqual([
+      { path: "steps[4].flow_id", message: "flow is required", step_type: "start_flow" },
+    ]);
+  });
+
+  it("an Add Campaign Entry step in that slot needs a campaign, never a flow", () => {
+    const fixed = [
+      ...COKE_STEPS.slice(0, 4),
+      { step_type: "campaign_add_entry", step_config: { campaign_id: "camp-coke" } },
+    ];
+    expect(validateStepsForActivation(fixed)).toEqual([]);
+    expect(
+      validateStepsForActivation([{ step_type: "campaign_add_entry", step_config: { campaign_id: "" } }]),
+    ).toEqual([{ path: "steps[0].campaign_id", message: "campaign is required" }]);
+  });
+});
+
+describe("validateStepReferences", () => {
+  const flows = [
+    { id: "f-active", name: "Lead capture", status: "active" },
+    { id: "f-draft", name: "Welcome menu", status: "draft" },
+  ];
+
+  it("accepts a Start Flow step pointing at an active flow", () => {
+    const steps = [{ step_type: "start_flow", step_config: { flow_id: "f-active" } }];
+    expect(validateStepReferences(steps, { flows })).toEqual([]);
+  });
+
+  it("rejects a flow that is not active, or no longer exists", () => {
+    const steps = [
+      { step_type: "start_flow", step_config: { flow_id: "f-draft" } },
+      {
+        step_type: "condition",
+        step_config: { subject: "tag_presence", operand: "t" },
+        branches: { yes: [{ step_type: "start_flow", step_config: { flow_id: "gone" } }] },
+      },
+    ];
+    expect(validateStepReferences(steps, { flows })).toEqual([
+      {
+        path: "steps[0].flow_id",
+        message: 'flow "Welcome menu" is not active, activate it or pick another flow',
+      },
+      {
+        path: "steps[1].yes.steps[0].flow_id",
+        message: "the selected flow no longer exists, pick another flow",
+      },
+    ]);
+  });
+
+  it("leaves empty flow ids to validateStepsForActivation and collects referenced ids", () => {
+    const steps = [
+      { step_type: "start_flow", step_config: { flow_id: "" } },
+      { step_type: "start_flow", step_config: { flow_id: "f-active" } },
+      { step_type: "campaign_add_entry", step_config: { campaign_id: "c" } },
+    ];
+    expect(validateStepReferences(steps, { flows: [] })).toHaveLength(1);
+    expect(referencedFlowIds(steps)).toEqual(["f-active"]);
+  });
+});
+
+describe("issueStepPath", () => {
+  it("maps root and nested paths back to builder step paths", () => {
+    expect(issueStepPath("steps[4].flow_id")).toEqual({
+      path: [{ kind: "root", index: 4 }],
+      field: "flow_id",
+    });
+    expect(issueStepPath("steps[1].no.steps[0].text")).toEqual({
+      path: [
+        { kind: "root", index: 1 },
+        { kind: "branch", branch: "no", index: 0 },
+      ],
+      field: "text",
+    });
+    expect(issueStepPath("steps[2]")).toEqual({ path: [{ kind: "root", index: 2 }] });
+  });
+
+  it("returns null for paths that are not about a step", () => {
+    expect(issueStepPath("steps")).toBeNull();
+    expect(issueStepPath("trigger.keywords")).toBeNull();
+  });
+});
+
+describe("send_media vs condition", () => {
+  const media = (media_type: string, url: string) => ({ step_type: "send_media", step_config: { media_type, url } });
+
+  it("accepts every WhatsApp media type with a direct file link and never asks for an operand", () => {
+    expect(
+      validateStepsForActivation([
+        media("image", "https://cdn.example.com/a.jpg"),
+        media("video", "https://cdn.example.com/a.mp4"),
+        media("document", "https://cdn.example.com/a.pdf"),
+        media("audio", "https://cdn.example.com/a.ogg"),
+        media("video", "{{ vars.video_url }}"),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("rejects a YouTube page as media and points to a text message instead", () => {
+    expect(validateStepsForActivation([media("video", "https://youtu.be/0Ab-F7Y3IXc")])).toEqual([
+      {
+        path: "steps[0].url",
+        message: "YouTube links can't be sent as media, send the link in a Send Message step instead",
+      },
+    ]);
+  });
+
+  it("still requires url and media type", () => {
+    expect(validateStepsForActivation([{ step_type: "send_media", step_config: {} }]).map((i) => i.path)).toEqual([
+      "steps[0].url",
+      "steps[0].media_type",
+    ]);
+  });
+
+  it("only condition steps need an operand, wherever they sit", () => {
+    const issues = validateStepsForActivation([
+      media("video", "https://cdn.example.com/a.mp4"),
+      {
+        step_type: "condition",
+        step_config: { subject: "message_content", operand: "" },
+        branches: {
+          yes: [media("image", "https://cdn.example.com/a.jpg")],
+          no: [{ step_type: "condition", step_config: { subject: "tag_presence", operand: "" } }],
+        },
+      },
+    ]);
+    expect(issues).toEqual([
+      { path: "steps[1].operand", message: "condition operand is required" },
+      { path: "steps[1].no.steps[0].operand", message: "condition operand is required" },
+    ]);
+  });
+
+  it("the current Coca-Cola steps raise no operand issue, only the YouTube-as-media one", () => {
+    const coke = [
+      { step_type: "send_message", step_config: { text: "Welcome to Coca-Cola!" } },
+      { step_type: "send_media", step_config: { url: "https://youtu.be/0Ab-F7Y3IXc", caption: "Win With Coke!", media_type: "video" } },
+      { step_type: "ask_question", step_config: { text: "Who will you share a Coke with?", var_key: "answer", timeout_hours: 48 } },
+      { step_type: "send_message", step_config: { text: "{{ entry.reference }} thanks" } },
+    ];
+    const issues = annotateIssues(validateStepsForActivation(coke), coke);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ path: "steps[1].url", step_type: "send_media" });
+    expect(issues.some((i) => i.message.includes("operand"))).toBe(false);
+
+    const asLink = [...coke];
+    asLink[1] = { step_type: "send_message", step_config: { text: "Win With Coke!\nhttps://youtu.be/0Ab-F7Y3IXc" } };
+    expect(validateStepsForActivation(asLink)).toEqual([]);
   });
 });

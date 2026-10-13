@@ -42,6 +42,8 @@ import {
 } from "@/components/ui/dialog"
 import { AUTOMATION_TEMPLATES, type TemplateSlug } from "@/lib/automations/templates"
 import { triggerMeta, formatRelative } from "@/lib/automations/trigger-meta"
+import type { ValidationIssue } from "@/lib/automations/validate"
+import { issueToast } from "@/components/automations/issue-toast"
 import { cn } from "@/lib/utils"
 
 const TEMPLATE_ORDER: TemplateSlug[] = [
@@ -62,6 +64,7 @@ export default function AutomationsPage() {
   const router = useRouter()
   const canCreate = useCan("send-messages")
   const t = useTranslations("Automations.list")
+  const tBuilder = useTranslations("Automations.builder")
   const [automations, setAutomations] = useState<Automation[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Automation | null>(null)
@@ -101,7 +104,15 @@ export default function AutomationsPage() {
         prev?.map((x) => (x.id === a.id ? { ...x, is_active: !next } : x)) ?? prev,
       )
       const body = await res.json().catch(() => ({}))
-      toast.error(body?.error ?? t("toasts.updateError"))
+      const issue: ValidationIssue | undefined = body?.issues?.[0]
+      if (issue?.message) {
+        const { title, description } = issueToast(issue, tBuilder)
+        toast.error(t("toasts.cannotActivate", { name: a.name }), {
+          description: description ? `${title}: ${description}` : title,
+        })
+      } else {
+        toast.error(body?.error ?? t("toasts.updateError"))
+      }
       return
     }
     toast.success(next ? t("toasts.activated") : t("toasts.paused"))

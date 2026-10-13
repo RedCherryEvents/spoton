@@ -8,9 +8,11 @@ import {
   type BuilderStepInput,
 } from '@/lib/automations/steps-tree'
 import {
+  annotateIssues,
   validateStepsForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
+import { loadStepReferenceIssues } from '@/lib/automations/validate-refs'
 
 async function requireUser() {
   const supabase = await createClient()
@@ -70,7 +72,7 @@ export async function PATCH(
   // to compute the post-patch "effective" state for validation.
   const { data: existing } = await admin
     .from('automations')
-    .select('id, user_id, is_active, trigger_type, trigger_config')
+    .select('id, user_id, account_id, is_active, trigger_type, trigger_config')
     .eq('id', id)
     .maybeSingle()
   if (!existing || existing.user_id !== user.id) {
@@ -104,11 +106,14 @@ export async function PATCH(
       ...validateTriggerForActivation(mergedTriggerType, mergedTriggerConfig),
       ...validateStepsForActivation(mergedSteps),
     ]
+    if (issues.length === 0) {
+      issues.push(...(await loadStepReferenceIssues(existing.account_id as string, mergedSteps)))
+    }
     if (issues.length > 0) {
       return NextResponse.json(
         {
           error: 'Cannot keep automation active with invalid configuration',
-          issues,
+          issues: annotateIssues(issues, mergedSteps),
         },
         { status: 400 },
       )

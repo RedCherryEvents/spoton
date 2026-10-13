@@ -2,10 +2,12 @@ import { describe, it, expect } from "vitest"
 
 import {
   childPath,
+  formatStepNumber,
   insertAt,
   mapAtPath,
   moveAt,
   removeAt,
+  stepAtPath,
   type ParentScope,
   type StepPath,
 } from "./builder-tree"
@@ -188,5 +190,43 @@ describe("unresolvable paths", () => {
 
   it("a stale index changes nothing", () => {
     expect(removeAt(tree(), rootPath(9))).toEqual(tree())
+  })
+})
+
+describe("stepAtPath / formatStepNumber", () => {
+  const tree: Step[] = [step("a"), condition("c", [step("y1"), step("y2")], [step("n1")]), step("b")]
+  const labels = { yes: "Yes", no: "No" }
+
+  it("finds root and nested steps", () => {
+    expect(stepAtPath(tree, [{ kind: "root", index: 2 }])?.cid).toBe("b")
+    expect(
+      stepAtPath(tree, [
+        { kind: "root", index: 1 },
+        { kind: "branch", branch: "yes", index: 1 },
+      ])?.cid,
+    ).toBe("y2")
+  })
+
+  it("returns undefined for paths that don't resolve", () => {
+    expect(stepAtPath(tree, [{ kind: "root", index: 9 }])).toBeUndefined()
+    expect(
+      stepAtPath(tree, [
+        { kind: "root", index: 0 },
+        { kind: "branch", branch: "yes", index: 0 },
+      ]),
+    ).toBeUndefined()
+  })
+
+  it("numbers steps from 1, naming the branch for nested ones", () => {
+    expect(formatStepNumber([{ kind: "root", index: 4 }], labels)).toBe("5")
+    expect(
+      formatStepNumber(
+        [
+          { kind: "root", index: 1 },
+          { kind: "branch", branch: "no", index: 0 },
+        ],
+        labels,
+      ),
+    ).toBe("2 › No › 1")
   })
 })

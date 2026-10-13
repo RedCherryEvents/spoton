@@ -905,6 +905,7 @@
         "duplicated": "Automation duplicated",
         "deleted": "Automation deleted",
         "updateError": "Failed to update",
+        "cannotActivate": "Can't turn on \"{name}\"",
         "duplicateError": "Failed to duplicate",
         "deleteError": "Failed to delete"
       }
@@ -984,7 +985,8 @@
         "select": "Select a campaign…",
         "any": "Any campaign",
         "placeholder": "Campaign id",
-        "unknown": "{id} (unknown campaign)"
+        "unknown": "{id} (unknown campaign)",
+        "useSuggested": "Use {name} (matches this automation's trigger)"
       },
       "flows": {
         "label": "Flow",
@@ -992,7 +994,8 @@
         "draftName": "{name} (not active)",
         "unknown": "{id} (unknown flow)",
         "none": "No flows yet. Create one under Flows first.",
-        "notActiveHint": "This flow isn't active, so the step will be skipped until you activate it.",
+        "notActiveHint": "This flow isn't active. Activate it before turning this automation on.",
+        "campaignHint": "Recording a campaign entry? Use Add Campaign Entry under Campaigns instead. It doesn't need a flow.",
         "help": "Starts the flow for this contact. Skipped if they're already in a flow. Tip: set the flow's trigger to \"Manual only\" so it runs only from automations.",
         "conflictTitle": "A flow will take these messages first",
         "conflictItem": "\"{keyword}\" also starts flow \"{flow}\" (keyword \"{flowKeyword}\")",
@@ -1111,6 +1114,9 @@
         "yes": "Yes",
         "no": "No"
       },
+      "issues": {
+        "atStep": "Step {number} · {step}"
+      },
       "addStep": "Add step",
       "delete": "Delete",
       "config": {
@@ -1173,6 +1179,8 @@
         "mediaDocument": "Document",
         "mediaAudio": "Audio",
         "mediaUrl": "Public media URL",
+        "mediaPageLink": "This is a {site} page, not a media file. WhatsApp can only send direct file links (MP4, JPG, PDF…) as media.",
+        "mediaSendAsLink": "Send it as a text link instead",
         "caption": "Caption",
         "questionText": "Question",
         "varKey": "Save reply as",

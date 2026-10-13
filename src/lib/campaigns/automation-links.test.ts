@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   campaignAutomationLinks,
+  inferAutomationCampaignId,
   sortCampaignAutomations,
   type CampaignAutomationSummary,
 } from './automation-links'
@@ -75,5 +76,49 @@ describe('sortCampaignAutomations', () => {
       row('live', true, 'step'),
     ])
     expect(sorted.map((r) => r.name)).toEqual(['live', 'paused', 'any'])
+  })
+})
+
+describe('inferAutomationCampaignId', () => {
+  const campaigns = [
+    { id: 'coke', code: 'COKE', keyword: 'WINCOKE' },
+    { id: 'icc', code: 'WINICC2027', keyword: 'WINICC2027' },
+    { id: 'bmw', code: 'BMW', keyword: 'DRIVEBMW' },
+  ]
+
+  it('resolves Coca-Cola from its keyword trigger', () => {
+    const a = auto('keyword_match', { keywords: ['WINCOKE', 'Coca-Cola'], match_type: 'contains' })
+    expect(inferAutomationCampaignId(a, [], campaigns)).toBe('coke')
+  })
+
+  it('resolves ICC by code and ignores a stale trigger campaign_id on keyword triggers', () => {
+    const a = auto('keyword_match', { keywords: ['WINICC2027'], campaign_id: 'coke' })
+    expect(inferAutomationCampaignId(a, [], campaigns)).toBe('icc')
+  })
+
+  it('resolves a campaign_entry trigger pinned to a campaign (BMW)', () => {
+    expect(inferAutomationCampaignId(auto('campaign_entry', { campaign_id: 'bmw' }), [], campaigns)).toBe('bmw')
+  })
+
+  it('falls back to campaign steps when they all name one campaign', () => {
+    const a = auto('new_message_received')
+    expect(
+      inferAutomationCampaignId(a, [step('campaign_set_status', { campaign_id: 'icc', status: 'completed' })], campaigns),
+    ).toBe('icc')
+  })
+
+  it('returns null rather than guessing when it is ambiguous or unknown', () => {
+    expect(
+      inferAutomationCampaignId(auto('keyword_match', { keywords: ['WINCOKE', 'DRIVEBMW'] }), [], campaigns),
+    ).toBeNull()
+    expect(
+      inferAutomationCampaignId(
+        auto('new_message_received'),
+        [step('campaign_add_entry', { campaign_id: 'coke' }), step('campaign_add_entry', { campaign_id: 'bmw' })],
+        campaigns,
+      ),
+    ).toBeNull()
+    expect(inferAutomationCampaignId(auto('campaign_entry', { campaign_id: 'deleted' }), [], campaigns)).toBeNull()
+    expect(inferAutomationCampaignId(auto('keyword_match', { keywords: ['hello'] }), [], campaigns)).toBeNull()
   })
 })

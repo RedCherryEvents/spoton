@@ -44,6 +44,7 @@ import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive, engineSendMedia } from './meta-send'
 import { validateInteractivePayload, type InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { videoPageSite } from '@/lib/whatsapp/media-url'
 import {
   addCampaignEntry,
   appendCampaignEntryEvent,
@@ -1061,6 +1062,10 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!args.contactId) throw new Error('send_media needs a contact')
       const url = interpolate(cfg.url ?? '', args)
       if (!url.trim()) throw new Error('send_media needs a url')
+      const site = videoPageSite(url)
+      if (site) {
+        throw new Error(`send_media cannot send a ${site} link as media; use a send_message step`)
+      }
       const conversationId = await resolveConversationId(args)
       const { whatsapp_message_id } = await engineSendMedia({
         accountId: args.automation.account_id,

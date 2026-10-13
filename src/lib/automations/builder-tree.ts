@@ -121,6 +121,39 @@ export function mapAtPath<T extends TreeStep<T>>(
   )
 }
 
+/** The step at `path`, or undefined when the path doesn't resolve. */
+export function stepAtPath<T extends TreeStep<T>>(
+  steps: T[],
+  path: StepPath,
+): T | undefined {
+  let bucket = steps
+  let found: T | undefined
+  for (const [i, marker] of path.entries()) {
+    if (i > 0) {
+      if (marker.kind !== "branch" || !found?.branches) return undefined
+      bucket = found.branches[marker.branch]
+    }
+    found = bucket[marker.index]
+    if (!found) return undefined
+  }
+  return found
+}
+
+/**
+ * 1-based step number as users see it: "5" at the top level,
+ * "3 › Yes › 1" inside a condition branch.
+ */
+export function formatStepNumber(
+  path: StepPath,
+  branchLabels: { yes: string; no: string },
+): string {
+  return path
+    .map((m) =>
+      m.kind === "root" ? String(m.index + 1) : `${branchLabels[m.branch]} › ${m.index + 1}`,
+    )
+    .join(" › ")
+}
+
 /** Drop the step at `path`. */
 export function removeAt<T extends TreeStep<T>>(
   steps: T[],

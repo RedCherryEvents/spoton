@@ -5,6 +5,7 @@ import {
   Fragment,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react"
@@ -47,6 +48,7 @@ import {
   Flag,
   Copy,
   Workflow,
+  AlertTriangle,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -79,6 +81,7 @@ import {
   blankListPayload,
 } from "@/components/interactive/interactive-builder"
 import { interactivePayloadPreviewText } from "@/lib/whatsapp/interactive"
+import { videoPageSite } from "@/lib/whatsapp/media-url"
 import { createClient } from "@/lib/supabase/client"
 import {
   childPath,
@@ -86,11 +89,22 @@ import {
   mapAtPath,
   moveAt,
   removeAt,
+  stepAtPath,
   type ParentScope,
   type StepPath,
 } from "@/lib/automations/builder-tree"
 import { keywordTextMatches } from "@/lib/automations/keyword-match"
 import { blockedAutomationKeywords } from "@/lib/automations/keyword-conflicts"
+import {
+  annotateIssues,
+  issueStepPath,
+  validateStepReferences,
+  validateStepsForActivation,
+  validateTriggerForActivation,
+  type ValidationIssue,
+} from "@/lib/automations/validate"
+import { inferAutomationCampaignId } from "@/lib/campaigns/automation-links"
+import { issueToast } from "@/components/automations/issue-toast"
 import { cn } from "@/lib/utils"
 
 // ------------------------------------------------------------
@@ -326,6 +340,7 @@ interface AutomationResources {
   stages: PipelineStageOption[]
   campaigns: Campaign[]
   flows: FlowOption[]
+  flowsLoaded: boolean
 }
 
 interface FlowOption {
@@ -357,10 +372,87 @@ const ResourcesContext = createContext<AutomationResources>({
   stages: [],
   campaigns: [],
   flows: [],
+  flowsLoaded: false,
 })
 
 function useResources(): AutomationResources {
   return useContext(ResourcesContext)
+}
+
+const CAMPAIGN_STEPS = new Set<AutomationStepType>([
+  "campaign_add_entry",
+  "campaign_set_status",
+  "campaign_generate_reference",
+  "campaign_set_field",
+])
+
+interface BuilderInsights {
+  /** Activation problems per step cid, shown on the card even for drafts. */
+  issuesByCid: Map<string, ValidationIssue[]>
+  /** The campaign this automation is about, when its setup makes that unambiguous. */
+  suggestedCampaignId: string | null
+}
+
+const InsightsContext = createContext<BuilderInsights>({
+  issuesByCid: new Map(),
+  suggestedCampaignId: null,
+})
+
+function useInsights(): BuilderInsights {
+  return useContext(InsightsContext)
+}
+
+function flattenSteps(steps: BuilderStep[]): BuilderStep[] {
+  return steps.flatMap((s) =>
+    s.branches ? [s, ...flattenSteps(s.branches.yes), ...flattenSteps(s.branches.no)] : [s],
+  )
+}
+
+/** Must sit inside ResourcesProvider: it reads the account's flows and campaigns. */
+function InsightsProvider({
+  triggerType,
+  triggerConfig,
+  steps,
+  children,
+}: {
+  triggerType: AutomationTriggerType
+  triggerConfig: Record<string, unknown>
+  steps: BuilderStep[]
+  children: ReactNode
+}) {
+  const { flows, flowsLoaded, campaigns } = useResources()
+
+  const issuesByCid = useMemo(() => {
+    const apiSteps = toApiSteps(steps)
+    const issues = [
+      ...validateStepsForActivation(apiSteps),
+      ...(flowsLoaded ? validateStepReferences(apiSteps, { flows }) : []),
+    ]
+    const map = new Map<string, ValidationIssue[]>()
+    for (const issue of issues) {
+      const loc = issueStepPath(issue.path)
+      const step = loc ? stepAtPath(steps, loc.path) : undefined
+      if (!step) continue
+      map.set(step.cid, [...(map.get(step.cid) ?? []), issue])
+    }
+    return map
+  }, [steps, flows, flowsLoaded])
+
+  const suggestedCampaignId = useMemo(
+    () =>
+      inferAutomationCampaignId(
+        { trigger_type: triggerType, trigger_config: triggerConfig },
+        flattenSteps(steps),
+        campaigns,
+      ),
+    [triggerType, triggerConfig, steps, campaigns],
+  )
+
+  return (
+    <InsightsContext.Provider value={{ issuesByCid, suggestedCampaignId }}>
+      {children}
+    </InsightsContext.Provider>
+  )
 }
 
 function ResourcesProvider({ children }: { children: ReactNode }) {
@@ -372,6 +464,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
   const [stages, setStages] = useState<PipelineStageOption[]>([])
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [flows, setFlows] = useState<FlowOption[]>([])
+  const [flowsLoaded, setFlowsLoaded] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -396,7 +489,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
             .from("pipeline_stages")
             .select("id, name, pipeline_id, position")
             .order("position"),
-          supabase.from("campaigns").select("id, name, code, status").order("name"),
+          supabase.from("campaigns").select("id, name, code, keyword, status").order("name"),
           supabase
             .from("flows")
             .select("id, name, status, trigger_type, trigger_config")
@@ -415,6 +508,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
         campaignsRes.error ? [] : ((campaignsRes.data as Campaign[] | null) ?? []),
       )
       setFlows(flowsRes.error ? [] : ((flowsRes.data as FlowOption[] | null) ?? []))
+      setFlowsLoaded(!flowsRes.error)
     })()
 
     // Members go through the API so we inherit its email-visibility
@@ -438,7 +532,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
 
   return (
     <ResourcesContext.Provider
-      value={{ tags, members, templates, customFields, pipelines, stages, campaigns, flows }}
+      value={{ tags, members, templates, customFields, pipelines, stages, campaigns, flows, flowsLoaded }}
     >
       {children}
     </ResourcesContext.Provider>
@@ -511,6 +605,7 @@ function CampaignSelect({
   allowEmpty?: boolean
 }) {
   const { campaigns } = useResources()
+  const { suggestedCampaignId } = useInsights()
   if (campaigns.length === 0) {
     return (
       <Input
@@ -522,22 +617,35 @@ function CampaignSelect({
     )
   }
   const selected = campaigns.find((c) => c.id === value)
+  const suggested =
+    !value && !allowEmpty ? campaigns.find((c) => c.id === suggestedCampaignId) : undefined
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={SELECT_CLASS}
-    >
-      <option value="">{allowEmpty ? t("campaigns.any") : t("campaigns.select")}</option>
-      {campaigns.map((c) => (
-        <option key={c.id} value={c.id}>
-          {c.name} ({c.code})
-        </option>
-      ))}
-      {value && !selected && (
-        <option value={value}>{t("campaigns.unknown", { id: value })}</option>
+    <>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={SELECT_CLASS}
+      >
+        <option value="">{allowEmpty ? t("campaigns.any") : t("campaigns.select")}</option>
+        {campaigns.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name} ({c.code})
+          </option>
+        ))}
+        {value && !selected && (
+          <option value={value}>{t("campaigns.unknown", { id: value })}</option>
+        )}
+      </select>
+      {suggested && (
+        <button
+          type="button"
+          onClick={() => onChange(suggested.id)}
+          className="mt-1 text-[11px] font-medium text-primary hover:underline"
+        >
+          {t("campaigns.useSuggested", { name: suggested.name })}
+        </button>
       )}
-    </select>
+    </>
   )
 }
 
@@ -570,6 +678,9 @@ function FlowSelect({
         <p className="mt-1 text-[11px] text-amber-400">{t("flows.notActiveHint")}</p>
       )}
       <p className="mt-1 text-[11px] text-muted-foreground">{t("flows.help")}</p>
+      {!value && (
+        <p className="mt-1 text-[11px] text-muted-foreground">{t("flows.campaignHint")}</p>
+      )}
     </>
   )
 }
@@ -961,12 +1072,17 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
     setState((s) => ({ ...s, steps: mapAtPath(s.steps, path, updater) }))
   }
 
-  function addStepAt(parent: ParentScope, index: number, type: AutomationStepType) {
+  function addStepAt(
+    parent: ParentScope,
+    index: number,
+    type: AutomationStepType,
+    seed?: Record<string, unknown>,
+  ) {
     const id = cid()
     const node: BuilderStep = {
       cid: id,
       step_type: type,
-      step_config: { ...blankConfig(type), node_id: id },
+      step_config: { ...blankConfig(type), ...seed, node_id: id },
       branches: BRANCHING_STEPS.has(type) ? { yes: [], no: [] } : undefined,
     }
     setState((s) => ({ ...s, steps: insertAt(s.steps, parent, index, node) }))
@@ -1030,7 +1146,32 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
     setState((s) => ({ ...s, steps: moveAt(s.steps, path, direction) }))
   }
 
+  function reportIssue(issue: ValidationIssue) {
+    const { title, description } = issueToast(issue, t)
+    toast.error(title, { description })
+    const loc = issueStepPath(issue.path)
+    const step = loc ? stepAtPath(state.steps, loc.path) : undefined
+    if (step) setExpandedId(step.cid)
+  }
+
   async function save() {
+    const steps = toApiSteps(state.steps)
+    // Drafts may be incomplete; only an active automation must be runnable.
+    // Flow existence is checked server-side, where it can't be stale.
+    if (state.is_active) {
+      const issues = annotateIssues(
+        [
+          ...validateTriggerForActivation(state.trigger_type, state.trigger_config),
+          ...validateStepsForActivation(steps),
+        ],
+        steps,
+      )
+      if (issues.length > 0) {
+        reportIssue(issues[0])
+        return
+      }
+    }
+
     setSaving(true)
     try {
       const payload = {
@@ -1039,7 +1180,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
         trigger_type: state.trigger_type,
         trigger_config: state.trigger_config,
         is_active: state.is_active,
-        steps: toApiSteps(state.steps),
+        steps,
       }
 
       const res = isEditing
@@ -1059,12 +1200,9 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
         // If the server blocked activation with validation issues,
         // surface the first concrete problem so the user can fix it
         // without opening DevTools for the full array.
-        const firstIssue: { path?: string; message?: string } | undefined =
-          body?.issues?.[0]
+        const firstIssue: ValidationIssue | undefined = body?.issues?.[0]
         if (firstIssue?.message) {
-          toast.error(firstIssue.message, {
-            description: firstIssue.path ? `at ${firstIssue.path}` : undefined,
-          })
+          reportIssue(firstIssue)
         } else {
           toast.error(body?.error ?? t("toasts.saveFailed"))
         }
@@ -1122,25 +1260,31 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
         <div className="absolute inset-0 bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none" />
         <div className="relative mx-auto flex max-w-2xl flex-col items-center gap-0 px-4 py-10">
           <ResourcesProvider>
-            <TriggerCard
-              type={state.trigger_type}
-              config={state.trigger_config}
-              onTypeChange={(tVal) => patchTop("trigger_type", tVal)}
-              onConfigChange={(c) => patchTop("trigger_config", c)}
-              t={t}
-            />
-            <StepList
+            <InsightsProvider
+              triggerType={state.trigger_type}
+              triggerConfig={state.trigger_config}
               steps={state.steps}
-              basePath={[]}
-              scope={{ kind: "root" }}
-              expandedId={expandedId}
-              setExpandedId={setExpandedId}
-              updateStep={updateStep}
-              addStepAt={addStepAt}
-              deleteStepAt={deleteStepAt}
-              duplicateStepAt={duplicateStepAt}
-              moveStepAt={moveStepAt}
-            />
+            >
+              <TriggerCard
+                type={state.trigger_type}
+                config={state.trigger_config}
+                onTypeChange={(tVal) => patchTop("trigger_type", tVal)}
+                onConfigChange={(c) => patchTop("trigger_config", c)}
+                t={t}
+              />
+              <StepList
+                steps={state.steps}
+                basePath={[]}
+                scope={{ kind: "root" }}
+                expandedId={expandedId}
+                setExpandedId={setExpandedId}
+                updateStep={updateStep}
+                addStepAt={addStepAt}
+                deleteStepAt={deleteStepAt}
+                duplicateStepAt={duplicateStepAt}
+                moveStepAt={moveStepAt}
+              />
+            </InsightsProvider>
           </ResourcesProvider>
         </div>
       </div>
@@ -1528,7 +1672,12 @@ interface StepListProps {
   expandedId: string | null
   setExpandedId: (id: string | null) => void
   updateStep: (path: StepPath, updater: (s: BuilderStep) => BuilderStep) => void
-  addStepAt: (parent: ParentScope, index: number, type: AutomationStepType) => void
+  addStepAt: (
+    parent: ParentScope,
+    index: number,
+    type: AutomationStepType,
+    seed?: Record<string, unknown>,
+  ) => void
   deleteStepAt: (path: StepPath) => void
   duplicateStepAt: (path: StepPath) => void
   moveStepAt: (path: StepPath, direction: -1 | 1) => void
@@ -1539,7 +1688,7 @@ function StepList(props: StepListProps) {
 
   return (
     <div className="flex w-full flex-col items-center">
-      <AddButton onPick={(t) => props.addStepAt(scope, 0, t)} />
+      <AddButton onPick={(t, seed) => props.addStepAt(scope, 0, t, seed)} />
       {steps.map((step, idx) => (
         <StepRenderer
           key={step.cid}
@@ -1577,6 +1726,7 @@ function StepRenderer({
     border: "border-l-border",
   }
   const Icon = meta.icon
+  const issues = useInsights().issuesByCid.get(step.cid) ?? []
   const expanded = props.expandedId === step.cid
   const isBranching = BRANCHING_STEPS.has(step.step_type)
   const nested = basePath.length > 0
@@ -1605,6 +1755,7 @@ function StepRenderer({
           className={cn(
             "rounded-lg border border-border border-l-4 bg-card shadow-lg",
             meta.border,
+            issues.length > 0 && "ring-1 ring-amber-500/60",
           )}
         >
           <button
@@ -1628,6 +1779,15 @@ function StepRenderer({
               </div>
               <div className="truncate text-sm font-medium text-foreground">{t(`steps.${meta.label}`)}</div>
               <div className="truncate text-[11px] text-muted-foreground">{previewFor(step)}</div>
+              {issues.map((issue) => (
+                <div
+                  key={issue.path + issue.message}
+                  className="mt-0.5 flex items-start gap-1 text-[11px] text-amber-400"
+                >
+                  <AlertTriangle className="mt-px h-3 w-3 flex-shrink-0" aria-hidden />
+                  <span>{issueToast(issue, t).title}</span>
+                </div>
+              ))}
             </div>
             <ChevronDown
               className={cn("h-4 w-4 text-muted-foreground transition-transform", expanded && "rotate-180")}
@@ -1690,7 +1850,7 @@ function StepRenderer({
           ConditionBranches), so it has no linear "continue" path — adding
           the trailing connector here would produce a spurious third output. */}
       {!isBranching && (
-        <AddButton onPick={(t) => props.addStepAt(scope, index + 1, t)} />
+        <AddButton onPick={(t, seed) => props.addStepAt(scope, index + 1, t, seed)} />
       )}
     </>
   )
@@ -1753,8 +1913,15 @@ function BranchColumn({
   )
 }
 
-function AddButton({ onPick }: { onPick: (t: AutomationStepType) => void }) {
+function AddButton({
+  onPick,
+}: {
+  onPick: (t: AutomationStepType, seed?: Record<string, unknown>) => void
+}) {
   const t = useTranslations("Automations.builder")
+  const { suggestedCampaignId } = useInsights()
+  const seedFor = (tp: AutomationStepType) =>
+    CAMPAIGN_STEPS.has(tp) && suggestedCampaignId ? { campaign_id: suggestedCampaignId } : undefined
   return (
     <div className="relative flex flex-col items-center">
       <div className="h-4 w-[2px] bg-border" aria-hidden />
@@ -1781,7 +1948,7 @@ function AddButton({ onPick }: { onPick: (t: AutomationStepType) => void }) {
                 {group.types.map((tp) => {
                   const Icon = STEP_META[tp].icon
                   return (
-                    <DropdownMenuItem key={tp} onClick={() => onPick(tp)}>
+                    <DropdownMenuItem key={tp} onClick={() => onPick(tp, seedFor(tp))}>
                       <Icon className="h-4 w-4" />
                       {t(`steps.${STEP_META[tp].label}`)}
                     </DropdownMenuItem>
@@ -2086,6 +2253,31 @@ function StepEditor({
               onChange={(e) => set({ url: e.target.value })}
               className="bg-muted text-foreground"
             />
+            {videoPageSite(String(cfg.url ?? "")) && (
+              <div className="mt-1 space-y-1 text-[11px]">
+                <p className="text-amber-400">
+                  {t("config.mediaPageLink", { site: videoPageSite(String(cfg.url)) ?? "" })}
+                </p>
+                <button
+                  type="button"
+                  className="font-medium text-primary hover:underline"
+                  onClick={() =>
+                    onChange({
+                      ...step,
+                      step_type: "send_message",
+                      step_config: {
+                        node_id: cfg.node_id,
+                        text: [cfg.caption, cfg.url]
+                          .filter((v) => typeof v === "string" && v.trim())
+                          .join("\n"),
+                      },
+                    })
+                  }
+                >
+                  {t("config.mediaSendAsLink")}
+                </button>
+              </div>
+            )}
           </FieldBlock>
           <FieldBlock label={t("config.caption")}>
             <Input
