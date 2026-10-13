@@ -1016,7 +1016,7 @@
       "triggers": {
         "new_message_received": {
           "label": "새 메시지 수신",
-          "hint": "모든 수신 메시지"
+          "hint": "키워드 또는 버튼 응답 자동화와 일치하지 않은 모든 수신 메시지"
         },
         "first_inbound_message": {
           "label": "대화 시작",

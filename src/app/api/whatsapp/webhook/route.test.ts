@@ -277,10 +277,10 @@ beforeEach(() => {
   h.tryResumeInboundWait.mockResolvedValue(false)
   h.runAutomationsForTrigger.mockImplementation(() => {
     h.state.automationStarted++
-    return new Promise<void>((resolve) => {
+    return new Promise<number>((resolve) => {
       setTimeout(() => {
         h.state.automationCompleted++
-        resolve()
+        resolve(0)
       }, 0)
     })
   })
@@ -534,7 +534,7 @@ describe('inbound webhook: after() awaits automations (#368)', () => {
   it('every triggered automation settles before the after() callback resolves', async () => {
     await runWebhook()
 
-    // first_inbound_message + new_message_received + keyword_match.
+    // first_inbound_message + keyword_match + new_message_received.
     expect(h.state.automationStarted).toBe(3)
     // If the dispatches were fire-and-forget, completed would still be 0
     // here — the callback would have resolved before the timers fired.
@@ -569,6 +569,54 @@ describe('inbound webhook: flows / wait / AI precedence', () => {
     expect(triggers).toContain('first_inbound_message')
     expect(triggers).not.toContain('new_message_received')
     expect(triggers).not.toContain('keyword_match')
+  })
+
+  const dispatchedTriggers = () =>
+    h.runAutomationsForTrigger.mock.calls.map(
+      (call) => (call[0] as { triggerType: string }).triggerType,
+    )
+
+  it('fires new_message_received as the fallback when no keyword automation matches', async () => {
+    await runWebhook()
+
+    expect(dispatchedTriggers()).toEqual([
+      'first_inbound_message',
+      'keyword_match',
+      'new_message_received',
+    ])
+    expect(h.dispatchInboundToAiReply).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips new_message_received and AI when a keyword automation matched', async () => {
+    h.runAutomationsForTrigger.mockImplementation(async (input: { triggerType: string }) =>
+      input.triggerType === 'keyword_match' ? 1 : 0,
+    )
+
+    await runWebhook()
+
+    const triggers = dispatchedTriggers()
+    expect(triggers).toContain('first_inbound_message')
+    expect(triggers).toContain('keyword_match')
+    expect(triggers).not.toContain('new_message_received')
+    expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
+  })
+
+  it('skips new_message_received when a button-reply automation matched', async () => {
+    h.runAutomationsForTrigger.mockImplementation(async (input: { triggerType: string }) =>
+      input.triggerType === 'interactive_reply' ? 1 : 0,
+    )
+
+    await runWebhook({
+      id: 'wamid.BTN2',
+      from: '15551230000',
+      timestamp: '1700000000',
+      type: 'button',
+      button: { text: 'Enter', payload: 'ENTER' },
+    })
+
+    const triggers = dispatchedTriggers()
+    expect(triggers).toContain('interactive_reply')
+    expect(triggers).not.toContain('new_message_received')
   })
 
   it('skips content automations and AI when an inbound wait consumed the message', async () => {

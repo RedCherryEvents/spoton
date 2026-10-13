@@ -829,33 +829,6 @@ async function processMessage(
   // message all exist before any step — including send_message — runs.
   // Fire-and-forget: a slow or failing automation must not block the
   // webhook's 200 OK response to Meta.
-  const automationTriggers: (
-    | 'new_contact_created'
-    | 'first_inbound_message'
-    | 'new_message_received'
-    | 'keyword_match'
-    | 'interactive_reply'
-  )[] = []
-  // Content-level triggers are suppressed when a flow or an inbound-wait
-  // consumed the message — see the comment block above.
-  if (!flowConsumed && !waitConsumed) {
-    automationTriggers.push('new_message_received', 'keyword_match')
-    // Interactive tap → fire the interactive_reply trigger too (only
-    // meaningful when a button/list reply actually arrived). Enables
-    // automation-only chained menus; when a Flow owns the menu it will
-    // have consumed the reply and this is skipped.
-    if (interactiveReplyId) {
-      automationTriggers.push('interactive_reply')
-    }
-  }
-  // new_contact_created fires only when the webhook just auto-created the
-  // contact row. first_inbound_message fires whenever this is the contact's
-  // first-ever customer-sent message — a superset that also catches
-  // manually-imported contacts sending for the first time. We dispatch both
-  // so users can pick whichever semantic they want; an automation that
-  // listens to only one trigger runs only when that trigger matches.
-  if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
-  if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
   // Awaited — not fire-and-forget. We're inside the route's `after()`
   // block, which only keeps the function alive for promises it can see, so
   // a detached dispatch can be frozen part-way through: the log row is
@@ -863,9 +836,16 @@ async function processMessage(
   // recurring one level down, and it's what issue #409 reported as runs
   // logging zero steps. `runAutomationsForTrigger` owns its own try/catch
   // and never throws; the `.catch` is belt-and-braces so one trigger
-  // type's failure can't skip the rest of the loop.
-  for (const triggerType of automationTriggers) {
-    await runAutomationsForTrigger({
+  // type's failure can't skip the rest.
+  const dispatchAutomations = (
+    triggerType:
+      | 'new_contact_created'
+      | 'first_inbound_message'
+      | 'new_message_received'
+      | 'keyword_match'
+      | 'interactive_reply',
+  ): Promise<number> =>
+    runAutomationsForTrigger({
       accountId,
       triggerType,
       contactId: contactRecord.id,
@@ -876,19 +856,51 @@ async function processMessage(
         // trigger's exact-id match.
         interactive_reply_id: interactiveReplyId ?? undefined,
       },
-    }).catch((err) => console.error('[automations] dispatch failed:', err))
+    }).catch((err) => {
+      console.error('[automations] dispatch failed:', err)
+      return 0
+    })
+
+  // first_inbound_message fires whenever this is the contact's first-ever
+  // customer-sent message — a superset of new_contact_created (which fires
+  // only when the webhook just auto-created the contact row) that also
+  // catches manually-imported contacts. We dispatch both so users can pick
+  // whichever semantic they want.
+  if (isFirstInboundMessage) await dispatchAutomations('first_inbound_message')
+  if (contactOutcome.wasCreated) await dispatchAutomations('new_contact_created')
+
+  // Content-level triggers are suppressed when a flow or an inbound-wait
+  // consumed the message — see the comment block above. Within them,
+  // keyword and button-reply automations take precedence:
+  // new_message_received is the catch-all and fires only when neither
+  // matched, so a campaign keyword doesn't also get the generic welcome.
+  let specificAutomationsMatched = 0
+  if (!flowConsumed && !waitConsumed) {
+    specificAutomationsMatched += await dispatchAutomations('keyword_match')
+    // Interactive tap → fire the interactive_reply trigger too (only
+    // meaningful when a button/list reply actually arrived). Enables
+    // automation-only chained menus; when a Flow owns the menu it will
+    // have consumed the reply and this is skipped.
+    if (interactiveReplyId) {
+      specificAutomationsMatched += await dispatchAutomations('interactive_reply')
+    }
+    if (specificAutomationsMatched === 0) {
+      await dispatchAutomations('new_message_received')
+    }
   }
 
   // AI auto-reply. Runs only for plain-text inbound that neither a
-  // Flow nor an inbound-wait (Ask Question) consumed — those
-  // deterministic paths already replied or will continue the script.
-  // Button taps are also excluded: they are menu navigation, not a
-  // free-text question. Awaited inside `after()` (same reason as the
-  // webhook dispatch below); `dispatchInboundToAiReply` owns its
-  // eligibility gates + try/catch and never throws.
+  // Flow, an inbound-wait (Ask Question), nor a keyword automation
+  // handled — those deterministic paths already replied or will
+  // continue the script. Button taps are also excluded: they are menu
+  // navigation, not a free-text question. Awaited inside `after()`
+  // (same reason as the webhook dispatch below);
+  // `dispatchInboundToAiReply` owns its eligibility gates + try/catch
+  // and never throws.
   if (
     !flowConsumed &&
     !waitConsumed &&
+    specificAutomationsMatched === 0 &&
     !interactiveReplyId &&
     inboundText.trim()
   ) {

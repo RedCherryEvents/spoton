@@ -1016,7 +1016,7 @@
       "triggers": {
         "new_message_received": {
           "label": "New Message Received",
-          "hint": "Any incoming message"
+          "hint": "Any incoming message no keyword or button-reply automation matched"
         },
         "first_inbound_message": {
           "label": "Conversation Started",
