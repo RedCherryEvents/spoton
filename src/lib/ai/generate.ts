@@ -23,32 +23,38 @@ export interface GenerateArgs {
  * of the raw text. Throws `AiError` on any provider/network failure.
  */
 export async function generateReply(args: GenerateArgs): Promise<GenerateResult> {
+  const result = await generateText(args)
+  return parseGeneration(result.text, result.usage)
+}
+
+/**
+ * Raw provider output for non-reply uses (e.g. the automation
+ * generator), without handoff parsing. Throws `AiError` on failure.
+ */
+export async function generateText(
+  args: GenerateArgs & { maxTokens?: number; timeoutMs?: number },
+): Promise<{ text: string; usage: AiUsage | null }> {
   const { config, systemPrompt, messages } = args
-  const timeoutMs = aiRequestTimeoutMs()
   const providerArgs = {
     apiKey: config.apiKey,
     model: config.model,
     systemPrompt,
     messages,
-    timeoutMs,
+    timeoutMs: args.timeoutMs ?? aiRequestTimeoutMs(),
+    maxTokens: args.maxTokens,
   }
 
-  let result: { text: string; usage: AiUsage | null }
   switch (config.provider) {
     case 'openai':
-      result = await generateOpenAi(providerArgs)
-      break
+      return generateOpenAi(providerArgs)
     case 'anthropic':
-      result = await generateAnthropic(providerArgs)
-      break
+      return generateAnthropic(providerArgs)
     default:
       throw new AiError(`Unsupported AI provider: ${config.provider}`, {
         code: 'unsupported_provider',
         status: 400,
       })
   }
-
-  return parseGeneration(result.text, result.usage)
 }
 
 /**

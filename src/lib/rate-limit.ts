@@ -173,6 +173,10 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** Automation Generator, per user. Each run reads the account's
+   *  catalog and may spend on the BYO key (the AI path also draws on
+   *  `aiDraftAccount`); a person regenerates a few times a minute at most. */
+  automationGenerate: { limit: 10, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

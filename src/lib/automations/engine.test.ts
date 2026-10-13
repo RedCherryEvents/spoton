@@ -77,7 +77,15 @@ vi.mock("./admin-client", () => {
       // run starts after the parked step
       const gte = ops.filters.find(([op, k]) => op === "gte" && k === "position");
       const from = gte ? Number(gte[2]) : -Infinity;
-      return { data: state.steps.filter((s) => Number(s.position) >= from), error: null };
+      // and the parent/branch scope, so condition branches see only their children
+      const parent = ops.filters.find(([op, k]) => op === "eq" && k === "parent_step_id");
+      const branch = ops.filters.find(([op, k]) => op === "eq" && k === "branch");
+      const scoped = state.steps.filter((s) =>
+        parent
+          ? s.parent_step_id === parent[2] && (!branch || s.branch === branch[2])
+          : s.parent_step_id == null,
+      );
+      return { data: scoped.filter((s) => Number(s.position) >= from), error: null };
     }
     return { data: null, error: null };
   }
@@ -492,6 +500,46 @@ describe("tag_added — conversation policy", () => {
       status: "failed",
       error_message: "tag_added automation cannot send: contact has no existing conversation",
     }));
+  });
+});
+
+describe("condition — message_content", () => {
+  function conditionRun(cfg: Record<string, unknown>) {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [
+      { id: "cond", automation_id: "a1", step_type: "condition", position: 0, parent_step_id: null, branch: null, step_config: cfg },
+      { id: "yes", automation_id: "a1", step_type: "add_note", position: 0, parent_step_id: "cond", branch: "yes", step_config: { text: "yes" } },
+      { id: "no", automation_id: "a1", step_type: "add_note", position: 0, parent_step_id: "cond", branch: "no", step_config: { text: "no" } },
+    ];
+  }
+  const branchTaken = () => JSON.stringify(h.state.logUpdates).match(/branch=(yes|no)/)?.[1];
+
+  async function run(text: string) {
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: text },
+    });
+  }
+
+  it("filters on the operand when value is empty (builder and generator drafts)", async () => {
+    conditionRun({ subject: "message_content", operand: "share" });
+    await run("hello there");
+    expect(branchTaken()).toBe("no");
+  });
+
+  it("matches the operand case-insensitively", async () => {
+    conditionRun({ subject: "message_content", operand: "share" });
+    await run("I want to SHARE");
+    expect(branchTaken()).toBe("yes");
+  });
+
+  it("still prefers value when both are set", async () => {
+    conditionRun({ subject: "message_content", operand: "ignored", value: "coke" });
+    await run("coke please");
+    expect(branchTaken()).toBe("yes");
   });
 });
 

@@ -10,6 +10,8 @@ export interface ProviderArgs {
   systemPrompt: string
   messages: ChatMessage[]
   timeoutMs: number
+  /** Output cap; defaults to MAX_OUTPUT_TOKENS (sized for chat replies). */
+  maxTokens?: number
 }
 
 /**

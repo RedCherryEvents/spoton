@@ -1,8 +1,10 @@
 "use client"
 
 import { Suspense, useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { Loader2 } from "lucide-react"
+import { useTranslations } from "next-intl"
+import { ArrowLeft, Hammer, Loader2, Sparkles } from "lucide-react"
 
 import {
   AutomationBuilder,
@@ -27,6 +29,57 @@ function NewAutomationPageInner() {
   const params = useSearchParams()
   const template = params.get("template") as TemplateSlug | null
   const campaignId = template ? null : params.get("campaign")
+  if (!template && !campaignId && params.get("mode") !== "manual") {
+    return <CreateAutomationChooser />
+  }
+  return <NewAutomationBuilder template={template} campaignId={campaignId} />
+}
+
+function CreateAutomationChooser() {
+  const t = useTranslations("Automations.create")
+  const options = [
+    { href: "/automations/new?mode=manual", icon: Hammer, title: t("manualTitle"), body: t("manualBody") },
+    { href: "/automations/generate", icon: Sparkles, title: t("generateTitle"), body: t("generateBody") },
+  ]
+  return (
+    <div className="mx-auto max-w-3xl space-y-6 py-6">
+      <div className="flex items-start gap-3">
+        <Link
+          href="/automations"
+          aria-label={t("back")}
+          className="mt-1 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">{t("title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("subtitle")}</p>
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {options.map(({ href, icon: Icon, title, body }) => (
+          <Link
+            key={href}
+            href={href}
+            className="group rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary/60 hover:bg-muted/40"
+          >
+            <Icon className="h-6 w-6 text-primary" />
+            <h2 className="mt-3 font-semibold text-foreground">{title}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{body}</p>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function NewAutomationBuilder({
+  template,
+  campaignId,
+}: {
+  template: TemplateSlug | null
+  campaignId: string | null
+}) {
   // undefined = still loading, null = not found / not requested
   const [campaign, setCampaign] = useState<Campaign | null | undefined>(
     campaignId ? undefined : null,

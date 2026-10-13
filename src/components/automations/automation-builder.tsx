@@ -1054,7 +1054,21 @@ function SendTemplateFields({
 // Main builder component
 // ------------------------------------------------------------
 
-export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
+/** What a `review` panel above the canvas gets: the live draft plus save. */
+export interface BuilderReviewContext {
+  state: BuilderInitial
+  saving: boolean
+  /** Save; `activate` turns the automation on in the same request. */
+  save: (opts?: { activate?: boolean }) => void
+}
+
+export function AutomationBuilder({
+  initial,
+  review,
+}: {
+  initial: BuilderInitial
+  review?: (ctx: BuilderReviewContext) => ReactNode
+}) {
   const router = useRouter()
   const t = useTranslations("Automations.builder")
   const isEditing = !!initial.id
@@ -1154,11 +1168,12 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
     if (step) setExpandedId(step.cid)
   }
 
-  async function save() {
+  async function save(opts?: { activate?: boolean }) {
     const steps = toApiSteps(state.steps)
+    const isActive = opts?.activate ?? state.is_active
     // Drafts may be incomplete; only an active automation must be runnable.
     // Flow existence is checked server-side, where it can't be stale.
-    if (state.is_active) {
+    if (isActive) {
       const issues = annotateIssues(
         [
           ...validateTriggerForActivation(state.trigger_type, state.trigger_config),
@@ -1179,7 +1194,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
         description: state.description || null,
         trigger_type: state.trigger_type,
         trigger_config: state.trigger_config,
-        is_active: state.is_active,
+        is_active: isActive,
         steps,
       }
 
@@ -1208,6 +1223,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
         }
         return
       }
+      if (isActive !== state.is_active) patchTop("is_active", isActive)
       toast.success(isEditing ? t("toasts.saved") : t("toasts.created"))
       if (!isEditing && body?.automation?.id) {
         router.replace(`/automations/${body.automation.id}/edit`)
@@ -1246,7 +1262,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
           />
         </div>
         <Button
-          onClick={save}
+          onClick={() => save()}
           disabled={saving}
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
@@ -1259,6 +1275,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
       <div className="relative flex-1 overflow-y-auto">
         <div className="absolute inset-0 bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none" />
         <div className="relative mx-auto flex max-w-2xl flex-col items-center gap-0 px-4 py-10">
+          {review?.({ state, saving, save: (opts) => void save(opts) })}
           <ResourcesProvider>
             <InsightsProvider
               triggerType={state.trigger_type}

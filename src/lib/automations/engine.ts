@@ -1440,8 +1440,11 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
       return v != null && String(v) === String(cfg.value ?? '')
     }
     case 'message_content': {
+      // The builder labels `operand` as required and `value` as optional,
+      // so a condition filled in only via `operand` must still filter.
+      const needle = String(cfg.value || cfg.operand || '').toLowerCase()
       const text = (args.context.message_text ?? '').toString()
-      return text.toLowerCase().includes((cfg.value ?? '').toLowerCase())
+      return text.toLowerCase().includes(needle)
     }
     case 'time_of_day': {
       // operand form "HH:mm-HH:mm" — true if now is within that window
