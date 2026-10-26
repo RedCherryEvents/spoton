@@ -897,8 +897,19 @@ async function advanceCurrentNodeKey(
 // Public entry point — the webhook calls this on every inbound.
 // ============================================================
 
+/**
+ * Which flows may START a run for this inbound (a run already in
+ * progress always advances):
+ *   - `all`: keyword and first-message flows (default).
+ *   - `keyword_only`: no first-message flow, e.g. the first message is
+ *     a campaign keyword that an automation handles.
+ *   - `none`: no new run, e.g. the contact is answering an automation's
+ *     question.
+ */
+export type NewFlowRuns = "all" | "keyword_only" | "none";
+
 export async function dispatchInboundToFlows(
-  input: DispatchInboundInput & { isFirstInboundMessage: boolean },
+  input: DispatchInboundInput & { isFirstInboundMessage: boolean; newRuns?: NewFlowRuns },
 ): Promise<DispatchInboundResult> {
   const db = supabaseAdmin();
   try {
@@ -932,11 +943,13 @@ export async function dispatchInboundToFlows(
     }
 
     // No active run → look for a flow whose entry trigger matches.
+    const newRuns = input.newRuns ?? "all";
+    if (newRuns === "none") return { consumed: false, outcome: "no_match" };
     const flow = await findEntryFlow(
       db,
       input.accountId,
       input.message,
-      input.isFirstInboundMessage,
+      input.isFirstInboundMessage && newRuns === "all",
     );
     if (!flow || !flow.entry_node_id) {
       return { consumed: false, outcome: "no_match" };

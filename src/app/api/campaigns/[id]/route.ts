@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { asJsonError, loadOwnedCampaign } from '@/lib/campaigns/access'
+import { normalizeWhatsAppNumber } from '@/lib/campaigns/whatsapp-link'
 
 export async function GET(
   _request: Request,
@@ -40,6 +41,7 @@ export async function PATCH(
         'client_name',
         'brand_color',
         'logo_url',
+        'whatsapp_number',
       ])
       const next = { ...(existing.settings ?? {}) } as Record<string, unknown>
       const incoming = body.settings as Record<string, unknown>
@@ -47,6 +49,16 @@ export async function PATCH(
         if (!allowedSettings.has(key)) continue
         if (value === null || value === '') delete next[key]
         else next[key] = value
+      }
+      if (next.whatsapp_number !== undefined) {
+        const n = normalizeWhatsAppNumber(String(next.whatsapp_number))
+        if (!n) {
+          return NextResponse.json(
+            { error: 'WhatsApp number must include the country code, e.g. +27 79 863 7339' },
+            { status: 400 },
+          )
+        }
+        next.whatsapp_number = n
       }
       if (typeof next.duplicate_rule === 'string') {
         const allowed = ['whatsapp', 'email', 'whatsapp_per_day', 'unlimited']

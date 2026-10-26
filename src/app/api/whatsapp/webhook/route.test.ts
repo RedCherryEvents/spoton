@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const h = vi.hoisted(() => ({
   runAutomationsForTrigger: vi.fn(),
   tryResumeInboundWait: vi.fn(async () => false),
+  hasOpenReplyWait: vi.fn(async () => false),
+  keywordAutomationMatches: vi.fn(async () => false),
   dispatchInboundToFlows: vi.fn(),
   dispatchInboundToAiReply: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
@@ -193,6 +195,8 @@ vi.mock('@/lib/whatsapp/template-webhook', () => ({
 vi.mock('@/lib/automations/engine', () => ({
   runAutomationsForTrigger: h.runAutomationsForTrigger,
   tryResumeInboundWait: h.tryResumeInboundWait,
+  hasOpenReplyWait: h.hasOpenReplyWait,
+  keywordAutomationMatches: h.keywordAutomationMatches,
 }))
 vi.mock('@/lib/flows/engine', () => ({
   dispatchInboundToFlows: h.dispatchInboundToFlows,
@@ -275,6 +279,8 @@ beforeEach(() => {
   h.dispatchInboundToAiReply.mockResolvedValue(undefined)
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
   h.tryResumeInboundWait.mockResolvedValue(false)
+  h.hasOpenReplyWait.mockResolvedValue(false)
+  h.keywordAutomationMatches.mockResolvedValue(false)
   h.runAutomationsForTrigger.mockImplementation(() => {
     h.state.automationStarted++
     return new Promise<number>((resolve) => {
@@ -539,6 +545,30 @@ describe('inbound webhook: after() awaits automations (#368)', () => {
     // If the dispatches were fire-and-forget, completed would still be 0
     // here — the callback would have resolved before the timers fired.
     expect(h.state.automationCompleted).toBe(3)
+  })
+})
+
+describe('inbound webhook: automations before starting a flow', () => {
+  const newRuns = () =>
+    (h.dispatchInboundToFlows.mock.calls[0][0] as { newRuns?: string }).newRuns
+
+  it('lets flows start as usual when nothing claims the message', async () => {
+    await runWebhook()
+    expect(newRuns()).toBe('all')
+  })
+
+  it("a first message that is a campaign keyword doesn't start a first-message flow", async () => {
+    h.keywordAutomationMatches.mockResolvedValue(true)
+    await runWebhook()
+    expect(h.keywordAutomationMatches).toHaveBeenCalledWith('acc-1', 'hello')
+    expect(newRuns()).toBe('keyword_only')
+  })
+
+  it("no flow starts while the contact is answering an automation's question", async () => {
+    h.hasOpenReplyWait.mockResolvedValue(true)
+    await runWebhook()
+    expect(h.hasOpenReplyWait).toHaveBeenCalledWith('acc-1', 'contact-1')
+    expect(newRuns()).toBe('none')
   })
 })
 

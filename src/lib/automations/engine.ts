@@ -242,6 +242,42 @@ export async function runAutomationById(args: {
 }
 
 /**
+ * True when an active keyword automation matches this text. The webhook
+ * uses it so a first message that is a campaign keyword goes to that
+ * campaign instead of starting a first-message flow.
+ */
+export async function keywordAutomationMatches(accountId: string, text: string): Promise<boolean> {
+  if (!text.trim()) return false
+  const { data, error } = await supabaseAdmin()
+    .from('automations')
+    .select('trigger_type, trigger_config')
+    .eq('account_id', accountId)
+    .eq('trigger_type', 'keyword_match')
+    .eq('is_active', true)
+  if (error || !data) return false
+  return (data as Automation[]).some((a) => triggerMatches(a, { message_text: text }))
+}
+
+/**
+ * True when the contact is answering an automation's question (an open,
+ * unexpired reply wait). The webhook then doesn't let a flow start, so
+ * the answer reaches the automation.
+ */
+export async function hasOpenReplyWait(accountId: string, contactId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin()
+    .from('automation_pending_executions')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('contact_id', contactId)
+    .eq('status', 'pending')
+    .eq('wait_kind', 'inbound_reply')
+    .gt('run_at', new Date().toISOString())
+    .limit(1)
+  if (error) return false
+  return (data ?? []).length > 0
+}
+
+/**
  * If this contact has an inbound-wait park (Ask Question), resume it
  * with the latest message text and skip content-level triggers.
  * Returns true when a wait consumed the inbound.
@@ -280,6 +316,15 @@ export async function tryResumeInboundWait(args: {
     .select('id')
     .maybeSingle()
   if (!claim) return false
+
+  // Past its timeout: expire it rather than resume. Normally the cron
+  // does this, but if the cron isn't running a stale wait would
+  // otherwise capture this contact's next message days later.
+  const runAt = row.run_at ? Date.parse(String(row.run_at)) : NaN
+  if (Number.isFinite(runAt) && runAt <= Date.now()) {
+    await expireReplyWait({ id: row.id as string, log_id: (row.log_id as string | null) ?? null })
+    return false
+  }
 
   const ctx = (row.context ?? {}) as AutomationContext
   const expectKey = typeof row.expect_var_key === 'string' ? row.expect_var_key : null

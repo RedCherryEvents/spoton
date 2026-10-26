@@ -317,3 +317,49 @@ describe("dispatchInboundToFlows — entry triggers (#490)", () => {
     expect(startedRuns()).toHaveLength(1);
   });
 });
+
+describe("dispatchInboundToFlows — automations take priority over new runs", () => {
+  const FIRST_MESSAGE_FLOW = { ...KEYWORD_FLOW, trigger_type: "first_inbound_message", trigger_config: {} };
+  const first = (newRuns?: "all" | "keyword_only" | "none", text = "SAVE") =>
+    dispatchInboundToFlows({
+      accountId: "acct-1",
+      userId: "u-1",
+      contactId: "ct-1",
+      conversationId: "cv-1",
+      message: { kind: "text", text, meta_message_id: "m1" },
+      isFirstInboundMessage: true,
+      newRuns,
+    });
+
+  it("by default a first message still starts the first-message flow", async () => {
+    h.state.flows = [FIRST_MESSAGE_FLOW];
+    expect((await first()).consumed).toBe(true);
+  });
+
+  it("keyword_only: a first-message keyword skips the first-message flow", async () => {
+    h.state.flows = [FIRST_MESSAGE_FLOW];
+    const result = await first("keyword_only");
+    expect(result.consumed).toBe(false);
+    expect(startedRuns()).toHaveLength(0);
+  });
+
+  it("keyword_only still lets a matching keyword flow start", async () => {
+    h.state.flows = [FIRST_MESSAGE_FLOW, KEYWORD_FLOW].reverse();
+    const result = await first("keyword_only", "order status please");
+    expect(result.consumed).toBe(true);
+    expect(startedRuns()).toHaveLength(1);
+  });
+
+  it("none: no flow starts while the contact answers an automation's question", async () => {
+    h.state.flows = [KEYWORD_FLOW];
+    const result = await first("none", "order status");
+    expect(result.consumed).toBe(false);
+    expect(startedRuns()).toHaveLength(0);
+  });
+
+  it("a flow run already in progress still advances whatever the mode", async () => {
+    h.state.activeRuns = [{ id: "run-9", flow_id: "flow-1", account_id: "acct-1", contact_id: "ct-1", status: "active", current_node_key: "done", vars: {}, reprompt_count: 0 }];
+    const result = await first("none", "anything");
+    expect(result.flow_run_id).toBe("run-9");
+  });
+});

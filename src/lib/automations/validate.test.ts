@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   annotateIssues,
   issueStepPath,
+  referencedCampaignIds,
   referencedFlowIds,
   validateStepReferences,
   validateStepsForActivation,
@@ -173,7 +174,7 @@ describe("validateStepsForActivation", () => {
     const issues = validateStepsForActivation([
       {
         step_type: "condition",
-        step_config: { subject: "tag", operand: "vip" },
+        step_config: { subject: "tag_presence", operand: "vip" },
         branches: {
           yes: [{ step_type: "add_tag", step_config: { tag_id: "" } }],
           no: [
@@ -525,5 +526,60 @@ describe("send_media vs condition", () => {
     const asLink = [...coke];
     asLink[1] = { step_type: "send_message", step_config: { text: "Win With Coke!\nhttps://youtu.be/0Ab-F7Y3IXc" } };
     expect(validateStepsForActivation(asLink)).toEqual([]);
+  });
+});
+
+describe("unsupported condition subjects", () => {
+  it("names the subject and the supported options", () => {
+    const steps = [
+      { step_type: "condition", step_config: { subject: "entry_status", operand: "completed" } },
+    ];
+    expect(validateStepsForActivation(steps)).toEqual([
+      {
+        path: "steps[0].subject",
+        message:
+          'condition "entry_status" is not supported, use one of: contact field, tag presence, message content, time of day',
+      },
+    ]);
+  });
+
+  it("accepts every subject the engine evaluates", () => {
+    for (const subject of ["contact_field", "tag_presence", "message_content", "time_of_day"]) {
+      expect(
+        validateStepsForActivation([{ step_type: "condition", step_config: { subject, operand: "x" } }]),
+      ).toEqual([]);
+    }
+  });
+});
+
+describe("validateStepReferences — campaigns", () => {
+  const campaigns = [
+    { id: "c-active", name: "WINICC2027", status: "active" },
+    { id: "c-draft", name: "Hollard Pay as You Drive", status: "draft" },
+  ];
+
+  it("rejects an Add Campaign Entry step whose campaign is not active, or is gone", () => {
+    const steps = [
+      { step_type: "campaign_add_entry", step_config: { campaign_id: "c-active" } },
+      { step_type: "campaign_add_entry", step_config: { campaign_id: "c-draft" } },
+      { step_type: "campaign_add_entry", step_config: { campaign_id: "gone" } },
+    ];
+    expect(validateStepReferences(steps, { flows: [], campaigns })).toEqual([
+      {
+        path: "steps[1].campaign_id",
+        message:
+          'campaign "Hollard Pay as You Drive" is draft, activate the campaign first or pick another campaign',
+      },
+      {
+        path: "steps[2].campaign_id",
+        message: "the selected campaign no longer exists, pick another campaign",
+      },
+    ]);
+    expect(referencedCampaignIds(steps)).toEqual(["c-active", "c-draft", "gone"]);
+  });
+
+  it("skips campaign checks when no campaigns are supplied (builder flow-only check)", () => {
+    const steps = [{ step_type: "campaign_add_entry", step_config: { campaign_id: "c-draft" } }];
+    expect(validateStepReferences(steps, { flows: [] })).toEqual([]);
   });
 });

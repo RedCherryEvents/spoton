@@ -7,7 +7,12 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
-import { runAutomationsForTrigger, tryResumeInboundWait } from '@/lib/automations/engine'
+import {
+  hasOpenReplyWait,
+  keywordAutomationMatches,
+  runAutomationsForTrigger,
+  tryResumeInboundWait,
+} from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
@@ -788,6 +793,19 @@ async function processMessage(
   // no active flows take the runner's early-exit "no_match" path
   // basically for free (one indexed SELECT for the active run).
   // ============================================================
+  // Automations get priority over STARTING a flow in two cases (a flow
+  // run already in progress still advances):
+  //   - the contact is answering an automation's question, so no flow
+  //     may start and the answer reaches the automation;
+  //   - a first message that is a campaign keyword goes to that keyword
+  //     automation, not to a first-message flow (keyword flows can still
+  //     start, as before).
+  const inboundText = contentText ?? message.text?.body ?? ''
+  const answeringAutomation = await hasOpenReplyWait(accountId, contactRecord.id).catch(() => false)
+  const firstMessageIsKeyword =
+    isFirstInboundMessage && !answeringAutomation
+      ? await keywordAutomationMatches(accountId, inboundText).catch(() => false)
+      : false
   const flowResult = await dispatchInboundToFlows({
     accountId,
     userId: configOwnerUserId,
@@ -807,10 +825,10 @@ async function processMessage(
             meta_message_id: message.id,
           },
     isFirstInboundMessage,
+    newRuns: answeringAutomation ? 'none' : firstMessageIsKeyword ? 'keyword_only' : 'all',
   })
   const flowConsumed = flowResult.consumed
 
-  const inboundText = contentText ?? message.text?.body ?? ''
   const waitConsumed = !flowConsumed
     ? await tryResumeInboundWait({
         accountId,

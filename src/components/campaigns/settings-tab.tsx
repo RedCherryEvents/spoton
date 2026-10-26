@@ -9,6 +9,7 @@ import { parseDuplicateRule } from '@/lib/campaigns/duplicate'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { WhatsAppEntryCard } from '@/components/campaigns/whatsapp-entry-card'
 
 export function CampaignSettingsTab({
   campaign,
@@ -78,6 +79,8 @@ export function CampaignSettingsTab({
           </div>
         </div>
       </section>
+
+      <WhatsAppEntryCard campaign={campaign} saving={saving} onSave={onSave} />
 
       <section className="space-y-3 rounded-xl border border-border bg-card p-4">
         <h2 className="text-sm font-medium">{t('settings.period')}</h2>

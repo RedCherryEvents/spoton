@@ -853,6 +853,8 @@ export interface CampaignSettings {
   client_name?: string;
   brand_color?: string;
   logo_url?: string;
+  /** Digits-only number customers message; drives the wa.me entry link + QR code. */
+  whatsapp_number?: string;
 }
 
 export interface Campaign {

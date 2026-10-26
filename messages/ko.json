@@ -1465,6 +1465,22 @@
       "brandColor": "브랜드 색상",
       "logoUrl": "로고 URL"
     },
+    "whatsappEntry": {
+      "title": "WhatsApp 참여 링크 및 QR 코드",
+      "hint": "고객이 이 링크를 열거나 QR 코드를 스캔하면 캠페인 키워드가 미리 입력된 WhatsApp 채팅이 시작됩니다.",
+      "number": "WhatsApp 번호 (국가 코드 포함)",
+      "noKeyword": "링크에 미리 입력되도록 캠페인 키워드를 추가하세요.",
+      "link": "참여 링크",
+      "qrEncodes": "QR 코드에는 이 전체 링크가 담겨 있습니다. 휴대폰 카메라로 스캔해 테스트하세요.",
+      "qrAlt": "{url} QR 코드",
+      "copy": "링크 복사",
+      "copied": "링크가 복사되었습니다",
+      "copyError": "링크를 복사하지 못했습니다.",
+      "open": "링크 열기",
+      "downloadPng": "PNG 다운로드",
+      "downloadSvg": "SVG 다운로드",
+      "empty": "고객이 메시지를 보낼 WhatsApp 번호를 입력하면 참여 링크와 QR 코드가 생성됩니다."
+    },
     "automation": {
       "title": "이 캠페인의 자동화",
       "subtitle": "자동화 {total}개 적용 · {active}개 활성",

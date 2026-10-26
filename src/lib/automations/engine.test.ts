@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
     logUpdates: [] as Record<string, unknown>[],
     pendingInserts: [] as Record<string, unknown>[],
     pendingRow: null as Record<string, unknown> | null,
+    profiles: [] as Record<string, unknown>[],
   },
 }));
 
@@ -33,6 +34,12 @@ vi.mock("./admin-client", () => {
       if (type === "insert") {
         state.pendingInserts.push(ops.payload as Record<string, unknown>);
         return { data: null, error: null };
+      }
+      // hasOpenReplyWait: list query filtered on run_at > now
+      const gt = ops.filters.find(([op, k]) => op === "gt" && k === "run_at");
+      if (gt) {
+        const row = state.pendingRow;
+        return { data: row && String(row.run_at) > String(gt[2]) ? [row] : [], error: null };
       }
       // claim (update … select id) and lookup both read the parked row
       if (type === "update") return { data: state.pendingRow ? { id: state.pendingRow.id } : null, error: null };
@@ -60,7 +67,15 @@ vi.mock("./admin-client", () => {
       }
       return { data: null, error: null };
     }
-    if (table === "automations") return { data: state.automations, error: null };
+    if (table === "automations") {
+      // honour the trigger_type filter like the real query does
+      const tt = ops.filters.find(([op, k]) => op === "eq" && k === "trigger_type");
+      return {
+        data: tt ? state.automations.filter((a) => a.trigger_type === tt[2]) : state.automations,
+        error: null,
+      };
+    }
+    if (table === "profiles") return { data: state.profiles, error: null };
     if (table === "automation_logs") {
       if (type === "insert") {
         state.logInserts.push(ops.payload as Record<string, unknown>);
@@ -105,6 +120,7 @@ vi.mock("./admin-client", () => {
       upsert: (p: unknown) => ((ops.type = "upsert"), (ops.payload = p), b),
       eq: (k: string, v: unknown) => (ops.filters.push(["eq", k, v]), b),
       gte: (k: string, v: unknown) => (ops.filters.push(["gte", k, v]), b),
+      gt: (k: string, v: unknown) => (ops.filters.push(["gt", k, v]), b),
       lte: () => b,
       in: () => b,
       is: () => b,
@@ -140,6 +156,7 @@ vi.mock("./campaign-ops", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./campaign-ops")>()),
   addCampaignEntry: vi.fn(),
   loadCampaign: vi.fn(async () => null),
+  setCampaignFieldValue: vi.fn(async () => "field set"),
 }));
 
 vi.mock("@/lib/flows/engine", () => ({
@@ -151,9 +168,18 @@ import {
   triggerMatches,
   interpolateTemplate,
   tryResumeInboundWait,
+  keywordAutomationMatches,
+  hasOpenReplyWait,
 } from "./engine";
 import { engineSendText, engineSendInteractive, engineSendMedia } from "./meta-send";
-import { addCampaignEntry } from "./campaign-ops";
+import { addCampaignEntry, setCampaignFieldValue } from "./campaign-ops";
+import {
+  HOLLARD_PAYD_INFO_QUESTIONS,
+  HOLLARD_PAYD_MESSAGES,
+  hollardPaydSteps,
+  hollardPaydTriggerConfig,
+  type PresetStep,
+} from "@/lib/campaigns/presets/hollard-payd";
 import { startFlowForContact } from "@/lib/flows/engine";
 import type { Automation, KeywordMatchTriggerConfig } from "@/types";
 
@@ -171,6 +197,7 @@ beforeEach(() => {
   h.state.logUpdates = [];
   h.state.pendingInserts = [];
   h.state.pendingRow = null;
+  h.state.profiles = [];
 });
 
 describe("runAutomationsForTrigger — tenant isolation", () => {
@@ -1022,5 +1049,277 @@ describe("send_media", () => {
       expect.objectContaining({ text: "Win With Coke!\nhttps://youtu.be/0Ab-F7Y3IXc" }),
     );
     expect(h.state.logUpdates.at(-1)).toMatchObject({ status: "success" });
+  });
+});
+
+describe("Hollard Pay as You Drive automation", () => {
+  const CAMPAIGN = "camp-hollard";
+  const hollard = {
+    id: "hp",
+    account_id: ACCOUNT,
+    user_id: "u1",
+    name: "Hollard — Pay as You Drive Welcome",
+    trigger_type: "keyword_match",
+    trigger_config: hollardPaydTriggerConfig(CAMPAIGN),
+    is_active: true,
+  };
+
+  // Preset tree → automation_steps rows, like steps-tree.ts insertSteps.
+  function rows(tree: PresetStep[], parent: string | null = null, branch: string | null = null) {
+    const out: Record<string, unknown>[] = [];
+    tree.forEach((s, position) => {
+      const id = parent ? `${parent}.${branch}${position}` : `s${position}`;
+      out.push({ id, automation_id: "hp", step_type: s.step_type, step_config: s.step_config, position, parent_step_id: parent, branch });
+      if (s.branches?.yes) out.push(...rows(s.branches.yes, id, "yes"));
+      if (s.branches?.no) out.push(...rows(s.branches.no, id, "no"));
+    });
+    return out;
+  }
+
+  function parkedWelcome(extra: Record<string, unknown> = {}) {
+    return {
+      id: "p1",
+      automation_id: "hp",
+      account_id: ACCOUNT,
+      user_id: "u1",
+      contact_id: "c1",
+      log_id: "log1",
+      parent_step_id: null,
+      branch: null,
+      next_step_position: 2,
+      expect_var_key: "payd_request",
+      run_at: new Date(Date.now() + 3_600_000).toISOString(),
+      context: { conversation_id: "conv1", campaign_id: CAMPAIGN, entry: { id: "e1", status: "in_progress" }, vars: {} },
+      ...extra,
+    };
+  }
+
+  function setUp() {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [hollard];
+    h.state.steps = rows(hollardPaydSteps(CAMPAIGN));
+    h.state.profiles = [{ user_id: "agent-1" }];
+  }
+
+  const reply = (messageText: string) =>
+    tryResumeInboundWait({ accountId: ACCOUNT, contactId: "c1", conversationId: "conv1", messageText });
+
+  it("SAVE adds the campaign entry first, then sends the welcome and waits", async () => {
+    setUp();
+    vi.mocked(addCampaignEntry).mockResolvedValue({
+      entry: { id: "e1", status: "in_progress", entry_reference: null } as never,
+      created: true,
+      duplicate: false,
+    });
+
+    const matched = await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "keyword_match",
+      contactId: "c1",
+      context: { message_text: "SAVE", conversation_id: "conv1" },
+    });
+
+    expect(matched).toBe(1);
+    expect(addCampaignEntry).toHaveBeenCalledTimes(1);
+    expect(addCampaignEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ campaignId: CAMPAIGN, contactId: "c1", automationId: "hp", messageText: "SAVE" }),
+    );
+    expect(engineSendText).toHaveBeenCalledTimes(1);
+    expect(engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: HOLLARD_PAYD_MESSAGES.welcome }));
+    expect(vi.mocked(addCampaignEntry).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(engineSendText).mock.invocationCallOrder[0],
+    );
+    expect(h.state.pendingInserts).toEqual([
+      expect.objectContaining({ wait_kind: "inbound_reply", expect_var_key: "payd_request", next_step_position: 2 }),
+    ]);
+  });
+
+  it("reuses the open entry when SAVE is sent again after the conversation", async () => {
+    setUp();
+    vi.mocked(addCampaignEntry).mockResolvedValue({
+      entry: { id: "e1", status: "in_progress", entry_reference: null } as never,
+      created: false,
+      duplicate: false,
+    });
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "keyword_match",
+      contactId: "c1",
+      context: { message_text: "save", conversation_id: "conv1" },
+    });
+
+    const details = h.state.logUpdates.flatMap(
+      (u) => ((u.steps_executed as { detail?: string }[] | undefined) ?? []).map((r) => r.detail),
+    );
+    expect(details).toContain("entry already existed (e1)");
+  });
+
+  it("INFO asks for car, area and current premium, saves each, then routes and closes", async () => {
+    setUp();
+    h.state.pendingRow = parkedWelcome();
+
+    // Reply INFO: request recorded, first question asked, run parked inside the INFO branch.
+    expect(await reply("INFO")).toBe(true);
+    expect(setCampaignFieldValue).toHaveBeenCalledWith(
+      expect.objectContaining({ campaignId: CAMPAIGN, fieldKey: "request", value: "INFO", entryId: "e1" }),
+    );
+    expect(h.state.pendingInserts).toEqual([
+      expect.objectContaining({ parent_step_id: "s3", branch: "yes", next_step_position: 2, expect_var_key: "payd_vehicle" }),
+    ]);
+
+    // Answer the three questions, resuming from each park in turn.
+    for (const answer of ["VW Polo 2019", "Sandton, Johannesburg", "R950"]) {
+      h.state.pendingRow = { id: `p${h.state.pendingInserts.length + 1}`, ...h.state.pendingInserts.at(-1)! };
+      expect(await reply(answer)).toBe(true);
+    }
+
+    expect(vi.mocked(engineSendText).mock.calls.map(([arg]) => arg.text)).toEqual([
+      ...HOLLARD_PAYD_INFO_QUESTIONS.map((q) => q.text),
+      HOLLARD_PAYD_MESSAGES.infoAck,
+      HOLLARD_PAYD_MESSAGES.closing,
+    ]);
+    const saved = vi.mocked(setCampaignFieldValue).mock.calls.map(([a]) => [a.fieldKey, a.value]);
+    expect(saved).toEqual([
+      ["request", "INFO"],
+      ["vehicle", "VW Polo 2019"],
+      ["area", "Sandton, Johannesburg"],
+      ["current_premium", "R950"],
+    ]);
+    // Three question parks, nothing left waiting after the last answer.
+    expect(h.state.pendingInserts).toHaveLength(3);
+    expect(h.state.fromCalls).toEqual(expect.arrayContaining(["contact_notes", "conversations", "notifications"]));
+  });
+
+  it("HELP goes down the help branch", async () => {
+    setUp();
+    h.state.pendingRow = parkedWelcome();
+
+    expect(await reply("I need help please")).toBe(true);
+
+    expect(setCampaignFieldValue).toHaveBeenCalledWith(expect.objectContaining({ value: "HELP" }));
+    expect(vi.mocked(engineSendText).mock.calls.map(([arg]) => arg.text)).toEqual([
+      HOLLARD_PAYD_MESSAGES.helpAck,
+      HOLLARD_PAYD_MESSAGES.closing,
+    ]);
+  });
+
+  it("anything else gets a prompt to reply INFO or HELP and keeps waiting", async () => {
+    setUp();
+    h.state.pendingRow = parkedWelcome();
+
+    expect(await reply("how much is it?")).toBe(true);
+
+    expect(engineSendText).toHaveBeenCalledTimes(1);
+    expect(engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: HOLLARD_PAYD_MESSAGES.retry }));
+    expect(setCampaignFieldValue).not.toHaveBeenCalled();
+    expect(h.state.pendingInserts).toEqual([
+      expect.objectContaining({
+        expect_var_key: "payd_request",
+        next_step_position: 2,
+        context: expect.objectContaining({ vars: expect.objectContaining({ payd_request_attempts: 2 }) }),
+      }),
+    ]);
+  });
+
+  it("SAVE sent again while waiting adds no entry and no second welcome", async () => {
+    setUp();
+    h.state.pendingRow = parkedWelcome();
+
+    expect(await reply("SAVE")).toBe(true);
+
+    expect(addCampaignEntry).not.toHaveBeenCalled();
+    expect(engineSendText).toHaveBeenCalledTimes(1);
+    expect(engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: HOLLARD_PAYD_MESSAGES.retry }));
+  });
+});
+
+describe("tryResumeInboundWait — expired waits", () => {
+  it("expires a wait past its timeout instead of resuming it", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [step(0, "ask_question", { text: "q?", var_key: "a" }), step(1, "send_message", { text: "after" })];
+    h.state.pendingRow = {
+      id: "p1",
+      automation_id: "a1",
+      account_id: ACCOUNT,
+      user_id: "u1",
+      contact_id: "c1",
+      log_id: "log1",
+      parent_step_id: null,
+      branch: null,
+      next_step_position: 1,
+      expect_var_key: "a",
+      run_at: new Date(Date.now() - 60_000).toISOString(),
+      context: { conversation_id: "conv1", vars: {} },
+    };
+
+    const consumed = await tryResumeInboundWait({
+      accountId: ACCOUNT,
+      contactId: "c1",
+      conversationId: "conv1",
+      messageText: "WINICC2027",
+    });
+
+    // Not consumed, so the webhook goes on to keyword automations.
+    expect(consumed).toBe(false);
+    expect(engineSendText).not.toHaveBeenCalled();
+    expect(h.state.logUpdates).toEqual([
+      expect.objectContaining({ status: "failed", error_message: "no reply before the wait timed out" }),
+    ]);
+  });
+});
+
+describe("BMW test-drive automation", () => {
+  it("after the test-drive question, finishes the branch with the completion and closing", async () => {
+    const { bmwSteps, CAMPAIGN_CLOSING, BMW_MESSAGES } = await import("@/lib/campaigns/presets/spoton-campaigns");
+    const tree = bmwSteps("camp-bmw");
+    // Flatten like steps-tree.ts: yes branch of the outer condition (root position 3).
+    const rows: Record<string, unknown>[] = [];
+    const walk = (list: typeof tree, parent: string | null, branch: string | null) =>
+      list.forEach((s, position) => {
+        const id = parent ? `${parent}.${branch}${position}` : `s${position}`;
+        rows.push({ id, automation_id: "bmw", step_type: s.step_type, step_config: s.step_config, position, parent_step_id: parent, branch });
+        if (s.branches?.yes) walk(s.branches.yes, id, "yes");
+        if (s.branches?.no) walk(s.branches.no, id, "no");
+      });
+    walk(tree, null, null);
+    h.state.owned = { id: "c1" };
+    h.state.automations = [{ id: "bmw", account_id: ACCOUNT, user_id: "u1", name: "BMW", trigger_type: "keyword_match", trigger_config: {}, is_active: true }];
+    h.state.steps = rows;
+    h.state.profiles = [{ user_id: "agent-1" }];
+    // Parked on the test-drive question: yes branch of s3, resume at position 2.
+    h.state.pendingRow = {
+      id: "p1", automation_id: "bmw", account_id: ACCOUNT, user_id: "u1", contact_id: "c1", log_id: "log1",
+      parent_step_id: "s3", branch: "yes", next_step_position: 2, expect_var_key: "test_drive_details",
+      run_at: new Date(Date.now() + 3_600_000).toISOString(),
+      context: { conversation_id: "conv1", campaign_id: "camp-bmw", entry: { id: "e1", status: "in_progress" }, vars: {} },
+    };
+
+    expect(await tryResumeInboundWait({ accountId: ACCOUNT, contactId: "c1", conversationId: "conv1", messageText: "X5, Sandton" })).toBe(true);
+
+    expect(setCampaignFieldValue).toHaveBeenCalledWith(expect.objectContaining({ fieldKey: "test_drive_details", value: "X5, Sandton" }));
+    expect(vi.mocked(engineSendText).mock.calls.map(([arg]) => arg.text)).toEqual([BMW_MESSAGES.testDriveAck, CAMPAIGN_CLOSING]);
+  });
+});
+
+describe("webhook routing helpers", () => {
+  it("keywordAutomationMatches: true only when an active keyword automation matches", async () => {
+    h.state.automations = [
+      { id: "hp", account_id: ACCOUNT, trigger_type: "keyword_match", trigger_config: hollardPaydTriggerConfig("c"), is_active: true },
+    ];
+    expect(await keywordAutomationMatches(ACCOUNT, "SAVE")).toBe(true);
+    expect(await keywordAutomationMatches(ACCOUNT, "save please")).toBe(true);
+    expect(await keywordAutomationMatches(ACCOUNT, "hello")).toBe(false);
+    expect(await keywordAutomationMatches(ACCOUNT, "   ")).toBe(false);
+  });
+
+  it("hasOpenReplyWait: true for an unexpired wait, false once it has expired", async () => {
+    h.state.pendingRow = { id: "p1", run_at: new Date(Date.now() + 3_600_000).toISOString() };
+    expect(await hasOpenReplyWait(ACCOUNT, "c1")).toBe(true);
+    h.state.pendingRow = { id: "p1", run_at: new Date(Date.now() - 60_000).toISOString() };
+    expect(await hasOpenReplyWait(ACCOUNT, "c1")).toBe(false);
+    h.state.pendingRow = null;
+    expect(await hasOpenReplyWait(ACCOUNT, "c1")).toBe(false);
   });
 });

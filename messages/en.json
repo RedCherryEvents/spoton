@@ -1465,6 +1465,22 @@
       "brandColor": "Brand color",
       "logoUrl": "Logo URL"
     },
+    "whatsappEntry": {
+      "title": "WhatsApp entry link & QR code",
+      "hint": "Customers open this link or scan the QR code to start a WhatsApp chat with the campaign keyword already typed.",
+      "number": "WhatsApp number (with country code)",
+      "noKeyword": "Add a campaign keyword so the link prefills it.",
+      "link": "Entry link",
+      "qrEncodes": "The QR code encodes this full link. Scan it with a phone camera to test.",
+      "qrAlt": "QR code for {url}",
+      "copy": "Copy link",
+      "copied": "Link copied",
+      "copyError": "Couldn't copy the link.",
+      "open": "Open link",
+      "downloadPng": "Download PNG",
+      "downloadSvg": "Download SVG",
+      "empty": "Enter the WhatsApp number customers should message to get the entry link and QR code."
+    },
     "automation": {
       "title": "Automations for this campaign",
       "subtitle": "{total, plural, one {# automation} other {# automations}} applied · {active} active",

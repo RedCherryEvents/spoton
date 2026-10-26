@@ -67,6 +67,29 @@ function forEachStep(
 export interface StepReferences {
   /** The account's flows that a `start_flow` step may point at. */
   flows: { id: string; name: string; status: string }[]
+  /**
+   * The account's campaigns that `campaign_add_entry` steps point at.
+   * Optional: campaign references are only checked when provided.
+   */
+  campaigns?: { id: string; name: string; status: string }[]
+}
+
+/** Condition subjects the engine can evaluate (engine.ts evaluateCondition). */
+export const SUPPORTED_CONDITION_SUBJECTS = [
+  'contact_field',
+  'tag_presence',
+  'message_content',
+  'time_of_day',
+] as const
+
+/** Campaign ids referenced by `campaign_add_entry` steps, anywhere in the tree. */
+export function referencedCampaignIds(steps: StepLike[]): string[] {
+  const ids = new Set<string>()
+  forEachStep(steps, '', (s) => {
+    const id = s.step_config?.campaign_id
+    if (s.step_type === 'campaign_add_entry' && nonEmpty(id)) ids.add(String(id).trim())
+  })
+  return [...ids]
 }
 
 /** Flow ids referenced by `start_flow` steps, anywhere in the tree. */
@@ -91,7 +114,25 @@ export function validateStepReferences(
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = []
   const flows = new Map(refs.flows.map((f) => [f.id, f]))
+  const campaigns = refs.campaigns ? new Map(refs.campaigns.map((c) => [c.id, c])) : null
   forEachStep(steps, '', (s, path) => {
+    // The engine refuses entries into a campaign that isn't active, so
+    // every run would fail at this step.
+    const campaignId = s.step_config?.campaign_id
+    if (campaigns && s.step_type === 'campaign_add_entry' && nonEmpty(campaignId)) {
+      const campaign = campaigns.get(String(campaignId).trim())
+      if (!campaign) {
+        issues.push({
+          path: `${path}.campaign_id`,
+          message: 'the selected campaign no longer exists, pick another campaign',
+        })
+      } else if (campaign.status !== 'active') {
+        issues.push({
+          path: `${path}.campaign_id`,
+          message: `campaign "${campaign.name}" is ${campaign.status}, activate the campaign first or pick another campaign`,
+        })
+      }
+    }
     const id = s.step_config?.flow_id
     if (s.step_type !== 'start_flow' || !nonEmpty(id)) return
     const flow = flows.get(String(id).trim())
@@ -204,6 +245,13 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
     case 'condition':
       if (!nonEmpty(c.subject)) {
         issues.push({ path: `${path}.subject`, message: 'condition subject is required' })
+      } else if (!(SUPPORTED_CONDITION_SUBJECTS as readonly string[]).includes(String(c.subject))) {
+        // The engine has no evaluator for it and would silently take
+        // the No branch on every run.
+        issues.push({
+          path: `${path}.subject`,
+          message: `condition "${String(c.subject)}" is not supported, use one of: contact field, tag presence, message content, time of day`,
+        })
       }
       if (!nonEmpty(c.operand)) {
         issues.push({ path: `${path}.operand`, message: 'condition operand is required' })
