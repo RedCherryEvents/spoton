@@ -58,3 +58,7 @@ One stale reply wait from 2026-10-21 was expired; it was holding one contact's n
 A flow run already in progress still advances as before. Tests: `src/lib/flows/dispatch.test.ts`, `src/app/api/whatsapp/webhook/route.test.ts`, `src/lib/automations/engine.test.ts`.
 
 **Until this is deployed**, keep Lead capture and Welcome menu paused. Once it's deployed, Lead capture can be switched on again: new contacts who send a keyword go to the campaign, and everyone else gets Lead capture.
+
+## 2026-10-27: Hollard → OUTsurance
+
+The Hollard Pay as You Drive campaign, automation and flow were renamed in place to **OUTsurance**. The keyword SAVE, the QR code and the existing entries are unchanged. The automation now asks one question (their name) and then gives OUTsurance's number, 08 600 60 000. See `docs/outsurance/README.md`.

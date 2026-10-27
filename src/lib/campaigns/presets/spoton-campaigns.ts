@@ -281,67 +281,33 @@ export const CAMPAIGN_FLOWS: PresetFlow[] = [
     ],
   },
   {
-    name: 'Hollard Pay as You Drive — Flow',
-    description: 'Flow version of the Hollard Pay as You Drive automation. Start it from the automation with a Start Flow step.',
-    campaign_code: 'HOLLARDPAYD',
+    name: 'OUTsurance — Flow',
+    description: 'Flow version of the OUTsurance automation. Start it from the automation with a Start Flow step.',
+    campaign_code: 'OUTSURANCE',
     trigger_type: 'manual',
     trigger_config: {},
     entry_node_id: 'start',
     nodes: [
-      { node_key: 'start', node_type: 'start', config: { next_node_key: 'welcome' } },
+      { node_key: 'start', node_type: 'start', config: { next_node_key: 'ask_name' } },
       {
-        node_key: 'welcome',
-        node_type: 'send_buttons',
+        node_key: 'ask_name',
+        node_type: 'collect_input',
         config: {
-          text: 'Welcome to Hollard Pay as You Drive! Thank you for your interest in car insurance based on how much you drive. Reply INFO to learn more or HELP if you need assistance with your enquiry.',
-          buttons: [
-            { reply_id: 'payd_info', title: 'INFO', next_node_key: 'q_vehicle' },
-            { reply_id: 'payd_help', title: 'HELP', next_node_key: 'help_ack' },
-          ],
+          prompt_text: "Welcome to OUTsurance! 👋 Thank you for your interest. What's your name?",
+          var_key: 'customer_name',
+          next_node_key: 'callback',
         },
       },
       {
-        node_key: 'q_vehicle',
-        node_type: 'collect_input',
-        config: {
-          prompt_text:
-            "Great! A few quick questions so the Hollard team can help you. We'll only share your answers with Hollard.\n\nWhich car do you drive? (make, model and year)",
-          var_key: 'payd_vehicle',
-          next_node_key: 'q_area',
-        },
-      },
-      {
-        node_key: 'q_area',
-        node_type: 'collect_input',
-        config: { prompt_text: 'Thanks! Where do you live? (suburb and city)', var_key: 'payd_area', next_node_key: 'q_premium' },
-      },
-      {
-        node_key: 'q_premium',
-        node_type: 'collect_input',
-        config: {
-          prompt_text: "And how much do you currently pay for car insurance per month? If you don't have car insurance yet, reply NONE.",
-          var_key: 'payd_current_premium',
-          next_node_key: 'info_ack',
-        },
-      },
-      {
-        node_key: 'info_ack',
+        node_key: 'callback',
         node_type: 'send_message',
         config: {
-          text: "Thank you! We've passed your request to the Hollard team, and someone will contact you with more information about Pay as You Drive.",
-          next_node_key: 'closing',
-        },
-      },
-      {
-        node_key: 'help_ack',
-        node_type: 'send_message',
-        config: {
-          text: "Thank you! We've passed your request to the Hollard team, and someone will contact you to help with your enquiry.",
+          text: "Thanks {{vars.customer_name}}! Please save this number: 08 600 60 000. That's OUTsurance, and we will call you.",
           next_node_key: 'closing',
         },
       },
       ...closingNodes('handoff'),
-      { node_key: 'handoff', node_type: 'handoff', config: { note: 'Hollard Pay as You Drive enquiry. Car: {{vars.payd_vehicle}}. Lives in: {{vars.payd_area}}. Currently pays: {{vars.payd_current_premium}}.' } },
+      { node_key: 'handoff', node_type: 'handoff', config: { note: 'OUTsurance call back: {{vars.customer_name}}.' } },
     ],
   },
 ]
@@ -368,7 +334,7 @@ export const UNIVERSAL_WELCOME = {
 
 /** Button title must contain the campaign keyword (taps are matched by title). */
 export const UNIVERSAL_WELCOME_BUTTONS = [
-  { id: 'menu_hollard', title: 'SAVE – Hollard', keyword: 'SAVE' },
+  { id: 'menu_outsurance', title: 'SAVE – OUTsurance', keyword: 'SAVE' },
   { id: 'menu_coke', title: 'WINCOKE – Coca-Cola', keyword: 'WINCOKE' },
   { id: 'menu_icc', title: 'WINICC2027 – ICC', keyword: 'WINICC2027' },
 ]

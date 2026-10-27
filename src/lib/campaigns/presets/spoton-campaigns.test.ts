@@ -10,7 +10,7 @@ import {
   bmwTriggerConfig,
   type PresetStep,
 } from "./spoton-campaigns";
-import { HOLLARD_PAYD_INFO_QUESTIONS, HOLLARD_PAYD_MESSAGES, hollardPaydTriggerConfig } from "./hollard-payd";
+import { OUTSURANCE_MESSAGES, OUTSURANCE_NAME_VAR, outsuranceTriggerConfig } from "./outsurance";
 import { validateStepsForActivation, validateTriggerForActivation } from "@/lib/automations/validate";
 import { keywordTextMatches } from "@/lib/automations/keyword-match";
 import { validateFlowForActivation } from "@/lib/flows/validate";
@@ -33,11 +33,11 @@ function paths(tree: PresetStep[], prefix: PresetStep[] = []): PresetStep[][] {
 }
 
 describe("standard closing", () => {
-  it("is the exact SPOT ON channel message, and Hollard uses the same text", () => {
+  it("is the exact SPOT ON channel message, and OUTsurance uses the same text", () => {
     expect(CAMPAIGN_CLOSING).toBe(
       "Thanks for entering! 🎉\nWant to stay up to date with more competitions, news and opportunities?\nJoin the SPOT ON channel: https://whatsapp.com/channel/0029VbCkl4K3mFYD5DXE8g1r",
     );
-    expect(HOLLARD_PAYD_MESSAGES.closing).toBe(CAMPAIGN_CLOSING);
+    expect(OUTSURANCE_MESSAGES.closing).toBe(CAMPAIGN_CLOSING);
   });
 });
 
@@ -96,11 +96,12 @@ describe("campaign flows", () => {
   });
 });
 
-describe("Hollard flow", () => {
-  it("asks the same INFO questions as the automation, in order", () => {
-    const flow = CAMPAIGN_FLOWS.find((f) => f.campaign_code === "HOLLARDPAYD")!;
-    const asks = flow.nodes.filter((n) => n.node_type === "collect_input").map((n) => [n.config.var_key, n.config.prompt_text]);
-    expect(asks).toEqual(HOLLARD_PAYD_INFO_QUESTIONS.map((q) => [q.var_key, q.text]));
+describe("OUTsurance flow", () => {
+  it("asks only for their name, then sends the same callback message as the automation", () => {
+    const flow = CAMPAIGN_FLOWS.find((f) => f.campaign_code === "OUTSURANCE")!;
+    const asks = flow.nodes.filter((n) => n.node_type === "collect_input");
+    expect(asks.map((n) => n.config.var_key)).toEqual([OUTSURANCE_NAME_VAR]);
+    expect(flow.nodes.find((n) => n.node_key === "callback")!.config.text).toBe(OUTSURANCE_MESSAGES.callback);
   });
 });
 
@@ -108,7 +109,7 @@ describe("Universal Welcome", () => {
   const steps = universalWelcomeSteps("tag-welcomed");
   // Live trigger configs of the campaign automations the buttons point at.
   const triggers = {
-    SAVE: hollardPaydTriggerConfig("camp-h"),
+    SAVE: outsuranceTriggerConfig("camp-o"),
     WINCOKE: { keywords: ["WINCOKE", "SHARECOKE2026", "Coke", "Share"], match_type: "contains" as const },
     WINICC2027: { keywords: ["WINICC2027"], match_type: "contains" as const },
   };

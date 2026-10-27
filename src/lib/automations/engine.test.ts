@@ -174,12 +174,11 @@ import {
 import { engineSendText, engineSendInteractive, engineSendMedia } from "./meta-send";
 import { addCampaignEntry, setCampaignFieldValue } from "./campaign-ops";
 import {
-  HOLLARD_PAYD_INFO_QUESTIONS,
-  HOLLARD_PAYD_MESSAGES,
-  hollardPaydSteps,
-  hollardPaydTriggerConfig,
+  OUTSURANCE_MESSAGES,
+  outsuranceSteps,
+  outsuranceTriggerConfig,
   type PresetStep,
-} from "@/lib/campaigns/presets/hollard-payd";
+} from "@/lib/campaigns/presets/outsurance";
 import { startFlowForContact } from "@/lib/flows/engine";
 import type { Automation, KeywordMatchTriggerConfig } from "@/types";
 
@@ -1052,34 +1051,26 @@ describe("send_media", () => {
   });
 });
 
-describe("Hollard Pay as You Drive automation", () => {
-  const CAMPAIGN = "camp-hollard";
-  const hollard = {
-    id: "hp",
+describe("OUTsurance automation", () => {
+  const CAMPAIGN = "camp-outsurance";
+  const outsurance = {
+    id: "os",
     account_id: ACCOUNT,
     user_id: "u1",
-    name: "Hollard — Pay as You Drive Welcome",
+    name: "OUTsurance — Welcome",
     trigger_type: "keyword_match",
-    trigger_config: hollardPaydTriggerConfig(CAMPAIGN),
+    trigger_config: outsuranceTriggerConfig(CAMPAIGN),
     is_active: true,
   };
 
-  // Preset tree → automation_steps rows, like steps-tree.ts insertSteps.
-  function rows(tree: PresetStep[], parent: string | null = null, branch: string | null = null) {
-    const out: Record<string, unknown>[] = [];
-    tree.forEach((s, position) => {
-      const id = parent ? `${parent}.${branch}${position}` : `s${position}`;
-      out.push({ id, automation_id: "hp", step_type: s.step_type, step_config: s.step_config, position, parent_step_id: parent, branch });
-      if (s.branches?.yes) out.push(...rows(s.branches.yes, id, "yes"));
-      if (s.branches?.no) out.push(...rows(s.branches.no, id, "no"));
-    });
-    return out;
-  }
+  // Preset steps → automation_steps rows (all root-level).
+  const rows = (tree: PresetStep[]) =>
+    tree.map((s, position) => ({ id: `s${position}`, automation_id: "os", step_type: s.step_type, step_config: s.step_config, position, parent_step_id: null, branch: null }));
 
-  function parkedWelcome(extra: Record<string, unknown> = {}) {
+  function parkedOnName(extra: Record<string, unknown> = {}) {
     return {
       id: "p1",
-      automation_id: "hp",
+      automation_id: "os",
       account_id: ACCOUNT,
       user_id: "u1",
       contact_id: "c1",
@@ -1087,7 +1078,7 @@ describe("Hollard Pay as You Drive automation", () => {
       parent_step_id: null,
       branch: null,
       next_step_position: 2,
-      expect_var_key: "payd_request",
+      expect_var_key: "customer_name",
       run_at: new Date(Date.now() + 3_600_000).toISOString(),
       context: { conversation_id: "conv1", campaign_id: CAMPAIGN, entry: { id: "e1", status: "in_progress" }, vars: {} },
       ...extra,
@@ -1096,15 +1087,15 @@ describe("Hollard Pay as You Drive automation", () => {
 
   function setUp() {
     h.state.owned = { id: "c1" };
-    h.state.automations = [hollard];
-    h.state.steps = rows(hollardPaydSteps(CAMPAIGN));
+    h.state.automations = [outsurance];
+    h.state.steps = rows(outsuranceSteps(CAMPAIGN));
     h.state.profiles = [{ user_id: "agent-1" }];
   }
 
   const reply = (messageText: string) =>
     tryResumeInboundWait({ accountId: ACCOUNT, contactId: "c1", conversationId: "conv1", messageText });
 
-  it("SAVE adds the campaign entry first, then sends the welcome and waits", async () => {
+  it("SAVE adds the campaign entry first, then asks their name and waits", async () => {
     setUp();
     vi.mocked(addCampaignEntry).mockResolvedValue({
       entry: { id: "e1", status: "in_progress", entry_reference: null } as never,
@@ -1120,21 +1111,50 @@ describe("Hollard Pay as You Drive automation", () => {
     });
 
     expect(matched).toBe(1);
-    expect(addCampaignEntry).toHaveBeenCalledTimes(1);
     expect(addCampaignEntry).toHaveBeenCalledWith(
-      expect.objectContaining({ campaignId: CAMPAIGN, contactId: "c1", automationId: "hp", messageText: "SAVE" }),
+      expect.objectContaining({ campaignId: CAMPAIGN, contactId: "c1", automationId: "os", messageText: "SAVE" }),
     );
-    expect(engineSendText).toHaveBeenCalledTimes(1);
-    expect(engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: HOLLARD_PAYD_MESSAGES.welcome }));
+    expect(vi.mocked(engineSendText).mock.calls.map(([a]) => a.text)).toEqual([OUTSURANCE_MESSAGES.welcome]);
     expect(vi.mocked(addCampaignEntry).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(engineSendText).mock.invocationCallOrder[0],
     );
     expect(h.state.pendingInserts).toEqual([
-      expect.objectContaining({ wait_kind: "inbound_reply", expect_var_key: "payd_request", next_step_position: 2 }),
+      expect.objectContaining({ wait_kind: "inbound_reply", expect_var_key: "customer_name", next_step_position: 2 }),
     ]);
   });
 
-  it("reuses the open entry when SAVE is sent again after the conversation", async () => {
+  it("their name is saved, then the OUTsurance number, the team alert and the closing", async () => {
+    setUp();
+    h.state.pendingRow = parkedOnName();
+
+    expect(await reply("Thabo Mokoena")).toBe(true);
+
+    expect(setCampaignFieldValue).toHaveBeenCalledWith(
+      expect.objectContaining({ campaignId: CAMPAIGN, fieldKey: "name", value: "Thabo Mokoena", entryId: "e1" }),
+    );
+    expect(vi.mocked(engineSendText).mock.calls.map(([a]) => a.text)).toEqual([
+      "Thanks Thabo Mokoena! Please save this number: 08 600 60 000. That's OUTsurance, and we will call you.",
+      OUTSURANCE_MESSAGES.closing,
+    ]);
+    expect(h.state.fromCalls).toEqual(expect.arrayContaining(["conversations", "notifications"]));
+    expect(h.state.pendingInserts).toEqual([]);
+  });
+
+  it("SAVE sent again while waiting is re-asked: no new entry, no name saved", async () => {
+    setUp();
+    h.state.pendingRow = parkedOnName();
+
+    expect(await reply("SAVE")).toBe(true);
+
+    expect(addCampaignEntry).not.toHaveBeenCalled();
+    expect(setCampaignFieldValue).not.toHaveBeenCalled();
+    expect(vi.mocked(engineSendText).mock.calls.map(([a]) => a.text)).toEqual([OUTSURANCE_MESSAGES.retry]);
+    expect(h.state.pendingInserts).toEqual([
+      expect.objectContaining({ expect_var_key: "customer_name", next_step_position: 2 }),
+    ]);
+  });
+
+  it("reuses the open entry when SAVE is sent again later", async () => {
     setUp();
     vi.mocked(addCampaignEntry).mockResolvedValue({
       entry: { id: "e1", status: "in_progress", entry_reference: null } as never,
@@ -1153,84 +1173,6 @@ describe("Hollard Pay as You Drive automation", () => {
       (u) => ((u.steps_executed as { detail?: string }[] | undefined) ?? []).map((r) => r.detail),
     );
     expect(details).toContain("entry already existed (e1)");
-  });
-
-  it("INFO asks for car, area and current premium, saves each, then routes and closes", async () => {
-    setUp();
-    h.state.pendingRow = parkedWelcome();
-
-    // Reply INFO: request recorded, first question asked, run parked inside the INFO branch.
-    expect(await reply("INFO")).toBe(true);
-    expect(setCampaignFieldValue).toHaveBeenCalledWith(
-      expect.objectContaining({ campaignId: CAMPAIGN, fieldKey: "request", value: "INFO", entryId: "e1" }),
-    );
-    expect(h.state.pendingInserts).toEqual([
-      expect.objectContaining({ parent_step_id: "s3", branch: "yes", next_step_position: 2, expect_var_key: "payd_vehicle" }),
-    ]);
-
-    // Answer the three questions, resuming from each park in turn.
-    for (const answer of ["VW Polo 2019", "Sandton, Johannesburg", "R950"]) {
-      h.state.pendingRow = { id: `p${h.state.pendingInserts.length + 1}`, ...h.state.pendingInserts.at(-1)! };
-      expect(await reply(answer)).toBe(true);
-    }
-
-    expect(vi.mocked(engineSendText).mock.calls.map(([arg]) => arg.text)).toEqual([
-      ...HOLLARD_PAYD_INFO_QUESTIONS.map((q) => q.text),
-      HOLLARD_PAYD_MESSAGES.infoAck,
-      HOLLARD_PAYD_MESSAGES.closing,
-    ]);
-    const saved = vi.mocked(setCampaignFieldValue).mock.calls.map(([a]) => [a.fieldKey, a.value]);
-    expect(saved).toEqual([
-      ["request", "INFO"],
-      ["vehicle", "VW Polo 2019"],
-      ["area", "Sandton, Johannesburg"],
-      ["current_premium", "R950"],
-    ]);
-    // Three question parks, nothing left waiting after the last answer.
-    expect(h.state.pendingInserts).toHaveLength(3);
-    expect(h.state.fromCalls).toEqual(expect.arrayContaining(["contact_notes", "conversations", "notifications"]));
-  });
-
-  it("HELP goes down the help branch", async () => {
-    setUp();
-    h.state.pendingRow = parkedWelcome();
-
-    expect(await reply("I need help please")).toBe(true);
-
-    expect(setCampaignFieldValue).toHaveBeenCalledWith(expect.objectContaining({ value: "HELP" }));
-    expect(vi.mocked(engineSendText).mock.calls.map(([arg]) => arg.text)).toEqual([
-      HOLLARD_PAYD_MESSAGES.helpAck,
-      HOLLARD_PAYD_MESSAGES.closing,
-    ]);
-  });
-
-  it("anything else gets a prompt to reply INFO or HELP and keeps waiting", async () => {
-    setUp();
-    h.state.pendingRow = parkedWelcome();
-
-    expect(await reply("how much is it?")).toBe(true);
-
-    expect(engineSendText).toHaveBeenCalledTimes(1);
-    expect(engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: HOLLARD_PAYD_MESSAGES.retry }));
-    expect(setCampaignFieldValue).not.toHaveBeenCalled();
-    expect(h.state.pendingInserts).toEqual([
-      expect.objectContaining({
-        expect_var_key: "payd_request",
-        next_step_position: 2,
-        context: expect.objectContaining({ vars: expect.objectContaining({ payd_request_attempts: 2 }) }),
-      }),
-    ]);
-  });
-
-  it("SAVE sent again while waiting adds no entry and no second welcome", async () => {
-    setUp();
-    h.state.pendingRow = parkedWelcome();
-
-    expect(await reply("SAVE")).toBe(true);
-
-    expect(addCampaignEntry).not.toHaveBeenCalled();
-    expect(engineSendText).toHaveBeenCalledTimes(1);
-    expect(engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: HOLLARD_PAYD_MESSAGES.retry }));
   });
 });
 
@@ -1306,7 +1248,7 @@ describe("BMW test-drive automation", () => {
 describe("webhook routing helpers", () => {
   it("keywordAutomationMatches: true only when an active keyword automation matches", async () => {
     h.state.automations = [
-      { id: "hp", account_id: ACCOUNT, trigger_type: "keyword_match", trigger_config: hollardPaydTriggerConfig("c"), is_active: true },
+      { id: "os", account_id: ACCOUNT, trigger_type: "keyword_match", trigger_config: outsuranceTriggerConfig("c"), is_active: true },
     ];
     expect(await keywordAutomationMatches(ACCOUNT, "SAVE")).toBe(true);
     expect(await keywordAutomationMatches(ACCOUNT, "save please")).toBe(true);

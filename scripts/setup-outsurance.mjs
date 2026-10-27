@@ -1,29 +1,19 @@
 #!/usr/bin/env node
-// Set up the Hollard Pay as You Drive WhatsApp campaign.
+// Set up the OUTsurance WhatsApp campaign (keyword SAVE).
+// Formerly Hollard Pay as You Drive: an existing Hollard campaign and
+// automation are renamed in place, so the keyword, WhatsApp number, QR
+// code and existing entries are kept.
 //
-//   node scripts/setup-hollard-payd.mjs           # dry run: checks only
-//   node scripts/setup-hollard-payd.mjs --apply   # create the draft records
-//   node scripts/setup-hollard-payd.mjs --apply --update-steps
-//        # also replace an EXISTING automation's steps with the preset
-//        # (backup first; keeps it on/off as it is; refuses while a
-//        # customer is mid-run inside a branch)
+//   node scripts/setup-outsurance.mjs                          # dry run
+//   node scripts/setup-outsurance.mjs --apply                  # create / rename
+//   node scripts/setup-outsurance.mjs --apply --update-steps   # also replace the
+//        automation's steps (backup first; open reply waits are ended,
+//        because their step positions no longer exist)
 //
-// What it does:
-//   1. Finds the whatsapp_config whose Meta phone number is
-//      +27 79 863 7339 and checks Meta reports it CONNECTED on the Cloud
-//      API with the WABA subscribed to an app. Aborts otherwise. The
-//      account and owner come from that row; no ids are hardcoded.
-//   2. Aborts if another campaign, active automation or active flow
-//      already listens for SAVE; warns about flows that would take the
-//      message before the automation (see the printed notes).
-//   3. With --apply: creates (or reuses) the campaign as DRAFT, its
-//      "request" field, and the automation as INACTIVE. Re-running never
-//      duplicates anything and never activates or edits an automation
-//      that already exists.
-//
-// Reads .env.local (Supabase service role + ENCRYPTION_KEY). Tokens are
-// decrypted in memory only and never printed. Needs Node 22.18+ (loads
-// the TypeScript preset directly).
+// Checks first that +27 79 863 7339 is CONNECTED on the Cloud API with
+// the WABA subscribed, and that nothing else listens for SAVE. Never
+// activates anything; an existing campaign/automation keeps its status.
+// Reads .env.local; tokens are decrypted in memory only. Node 22.18+.
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -31,14 +21,17 @@ import crypto from 'node:crypto'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import {
-  HOLLARD_PAYD_AUTOMATION,
-  HOLLARD_PAYD_CAMPAIGN,
-  HOLLARD_PAYD_FIELDS,
-  HOLLARD_PAYD_KEYWORD,
-  HOLLARD_PAYD_WHATSAPP_NUMBER,
-  hollardPaydSteps,
-  hollardPaydTriggerConfig,
-} from '../src/lib/campaigns/presets/hollard-payd.ts'
+  OUTSURANCE_AUTOMATION,
+  OUTSURANCE_CAMPAIGN,
+  OUTSURANCE_FIELDS,
+  OUTSURANCE_KEYWORD,
+  OUTSURANCE_LEGACY_AUTOMATION_NAME,
+  OUTSURANCE_LEGACY_CODE,
+  OUTSURANCE_WHATSAPP_NUMBER,
+  outsuranceSteps,
+  outsuranceTriggerConfig,
+} from '../src/lib/campaigns/presets/outsurance.ts'
+import { CAMPAIGN_FLOWS } from '../src/lib/campaigns/presets/spoton-campaigns.ts'
 import { buildWhatsAppEntryUrl } from '../src/lib/campaigns/whatsapp-link.ts'
 import { keywordTextMatches } from '../src/lib/automations/keyword-match.ts'
 
@@ -149,7 +142,7 @@ for (const c of configs ?? []) {
       `${META}/${c.phone_number_id}?fields=id,display_phone_number,verified_name,status,platform_type,quality_rating`,
       token,
     )
-    if (String(phone.display_phone_number ?? '').replace(/\D/g, '') === HOLLARD_PAYD_WHATSAPP_NUMBER) {
+    if (String(phone.display_phone_number ?? '').replace(/\D/g, '') === OUTSURANCE_WHATSAPP_NUMBER) {
       matches.push({ config: c, phone, token })
     }
   } catch (err) {
@@ -157,9 +150,9 @@ for (const c of configs ?? []) {
   }
 }
 if (matches.length === 0) {
-  fail(`no connected whatsapp_config uses +${HOLLARD_PAYD_WHATSAPP_NUMBER}. Connect the number under Settings → WhatsApp first.`)
+  fail(`no connected whatsapp_config uses +${OUTSURANCE_WHATSAPP_NUMBER}. Connect the number under Settings → WhatsApp first.`)
 }
-if (matches.length > 1) fail(`more than one whatsapp_config uses +${HOLLARD_PAYD_WHATSAPP_NUMBER}; resolve the duplicate first.`)
+if (matches.length > 1) fail(`more than one whatsapp_config uses +${OUTSURANCE_WHATSAPP_NUMBER}; resolve the duplicate first.`)
 
 const { config, phone, token } = matches[0]
 if (phone.status !== 'CONNECTED') fail(`Meta reports the number as ${phone.status}, not CONNECTED.`)
@@ -171,7 +164,7 @@ if (!Array.isArray(apps.data) || apps.data.length === 0) {
   fail('the WhatsApp Business Account is not subscribed to any app, so inbound messages will not reach the webhook.')
 }
 console.log(
-  `✔ +${HOLLARD_PAYD_WHATSAPP_NUMBER} is phone_number_id ${config.phone_number_id} ("${phone.verified_name}", ${phone.status}, ${phone.platform_type}, quality ${phone.quality_rating}); WABA subscribed to: ${apps.data.map((a) => a.whatsapp_business_api_data?.name ?? '?').join(', ')}`,
+  `✔ +${OUTSURANCE_WHATSAPP_NUMBER} is phone_number_id ${config.phone_number_id} ("${phone.verified_name}", ${phone.status}, ${phone.platform_type}, quality ${phone.quality_rating}); WABA subscribed to: ${apps.data.map((a) => a.whatsapp_business_api_data?.name ?? '?').join(', ')}`,
 )
 const accountId = config.account_id
 const ownerId = config.user_id
@@ -183,44 +176,38 @@ const [{ data: campaigns }, { data: automations }, { data: flows }] = await Prom
   db.from('flows').select('id, name, status, trigger_type, trigger_config').eq('account_id', accountId),
 ])
 
-const existingCampaign = (campaigns ?? []).find((c) => c.code === HOLLARD_PAYD_CAMPAIGN.code) ?? null
+const existingCampaign =
+  (campaigns ?? []).find((c) => c.code === OUTSURANCE_CAMPAIGN.code) ??
+  (campaigns ?? []).find((c) => c.code === OUTSURANCE_LEGACY_CODE) ??
+  null
 for (const c of campaigns ?? []) {
   if (c.id === existingCampaign?.id) continue
   const tokens = String(c.keyword ?? '').split(',').map((k) => k.trim().toLowerCase())
-  if (tokens.includes(HOLLARD_PAYD_KEYWORD.toLowerCase())) fail(`campaign "${c.name}" already uses the keyword ${HOLLARD_PAYD_KEYWORD}.`)
+  if (tokens.includes(OUTSURANCE_KEYWORD.toLowerCase())) fail(`campaign "${c.name}" already uses the keyword ${OUTSURANCE_KEYWORD}.`)
 }
 for (const a of automations ?? []) {
-  if (a.name === HOLLARD_PAYD_AUTOMATION.name || !a.is_active || a.trigger_type !== 'keyword_match') continue
-  if (keywordTextMatches(a.trigger_config ?? {}, HOLLARD_PAYD_KEYWORD)) {
-    fail(`active automation "${a.name}" already fires on "${HOLLARD_PAYD_KEYWORD}".`)
+  if (a.name === OUTSURANCE_AUTOMATION.name || a.name === OUTSURANCE_LEGACY_AUTOMATION_NAME || !a.is_active || a.trigger_type !== 'keyword_match') continue
+  if (keywordTextMatches(a.trigger_config ?? {}, OUTSURANCE_KEYWORD)) {
+    fail(`active automation "${a.name}" already fires on "${OUTSURANCE_KEYWORD}".`)
   }
 }
 for (const f of (flows ?? []).filter((x) => x.status === 'active')) {
-  if (f.trigger_type === 'keyword' && flowKeywordHits(f.trigger_config, HOLLARD_PAYD_KEYWORD)) {
-    fail(`active flow "${f.name}" already starts on "${HOLLARD_PAYD_KEYWORD}"; flows run before automations.`)
+  if (f.trigger_type === 'keyword' && flowKeywordHits(f.trigger_config, OUTSURANCE_KEYWORD)) {
+    fail(`active flow "${f.name}" already starts on "${OUTSURANCE_KEYWORD}"; flows run before automations.`)
   }
   if (f.trigger_type === 'first_inbound_message') {
     warnings.push(
-      `active flow "${f.name}" starts on a contact's FIRST message, so a new customer's SAVE goes to that flow and the Hollard automation does not run. Change its trigger or pause it before going live.`,
+      `active flow "${f.name}" starts on a contact's FIRST message, so a new customer's SAVE goes to that flow and the OUTsurance automation does not run. Change its trigger or pause it before going live.`,
     )
-  }
-  if (f.trigger_type === 'keyword') {
-    for (const reply of ['INFO', 'HELP']) {
-      if (flowKeywordHits(f.trigger_config, reply)) {
-        warnings.push(
-          `active flow "${f.name}" matches "${reply}", so a customer's ${reply} reply goes to that flow instead of the Hollard automation. Remove that keyword from the flow before going live.`,
-        )
-      }
-    }
   }
 }
 
-const entryUrl = buildWhatsAppEntryUrl(HOLLARD_PAYD_WHATSAPP_NUMBER, HOLLARD_PAYD_KEYWORD)
-console.log(`✔ no other campaign, active automation or active flow uses ${HOLLARD_PAYD_KEYWORD}`)
+const entryUrl = buildWhatsAppEntryUrl(OUTSURANCE_WHATSAPP_NUMBER, OUTSURANCE_KEYWORD)
+console.log(`✔ no other campaign, active automation or active flow uses ${OUTSURANCE_KEYWORD}`)
 console.log(`  Entry link / QR destination: ${entryUrl}`)
 
 if (!APPLY) {
-  console.log(`\nWould create: campaign "${HOLLARD_PAYD_CAMPAIGN.name}" (draft)${existingCampaign ? ' — already exists, reused' : ''}, fields ${HOLLARD_PAYD_FIELDS.map((f) => f.key).join(', ')}, automation "${HOLLARD_PAYD_AUTOMATION.name}" (inactive).`)
+  console.log(`\nWould create: campaign "${OUTSURANCE_CAMPAIGN.name}" (draft)${existingCampaign ? ' — already exists, reused' : ''}, fields ${OUTSURANCE_FIELDS.map((f) => f.key).join(', ')}, automation "${OUTSURANCE_AUTOMATION.name}" (inactive).`)
 } else {
   // 3a. Campaign (draft). An existing one keeps its status; only the
   // keyword and WhatsApp number are brought in line.
@@ -228,50 +215,64 @@ if (!APPLY) {
   if (!campaign) {
     const { data, error } = await db
       .from('campaigns')
-      .insert({ ...HOLLARD_PAYD_CAMPAIGN, account_id: accountId, user_id: ownerId })
+      .insert({ ...OUTSURANCE_CAMPAIGN, account_id: accountId, user_id: ownerId })
       .select('*')
       .single()
     if (error) fail(`campaign insert failed: ${error.message}`)
     campaign = data
     console.log(`✔ created campaign "${campaign.name}" (${campaign.status})`)
   } else {
-    const settings = { ...(campaign.settings ?? {}), whatsapp_number: HOLLARD_PAYD_WHATSAPP_NUMBER }
+    // Rename in place: keyword, status and entries are kept.
+    const settings = {
+      ...(campaign.settings ?? {}),
+      client_name: OUTSURANCE_CAMPAIGN.settings.client_name,
+      whatsapp_number: OUTSURANCE_WHATSAPP_NUMBER,
+    }
     const { error } = await db
       .from('campaigns')
-      .update({ keyword: HOLLARD_PAYD_KEYWORD, settings })
+      .update({
+        name: OUTSURANCE_CAMPAIGN.name,
+        code: OUTSURANCE_CAMPAIGN.code,
+        description: OUTSURANCE_CAMPAIGN.description,
+        keyword: OUTSURANCE_KEYWORD,
+        settings,
+      })
       .eq('id', campaign.id)
       .eq('account_id', accountId)
     if (error) fail(`campaign update failed: ${error.message}`)
-    console.log(`✔ campaign "${campaign.name}" already exists (${campaign.status}); keyword + WhatsApp number confirmed`)
+    console.log(`✔ campaign "${campaign.name}" (${campaign.status}) is now "${OUTSURANCE_CAMPAIGN.name}" (code ${OUTSURANCE_CAMPAIGN.code}); keyword, WhatsApp number and entries kept`)
   }
 
   // 3b. Captured fields.
-  for (const [position, f] of HOLLARD_PAYD_FIELDS.entries()) {
+  for (const [position, f] of OUTSURANCE_FIELDS.entries()) {
     const { error: fieldErr } = await db.from('campaign_field_definitions').upsert(
       { ...f, campaign_id: campaign.id, account_id: accountId, required: false, position },
       { onConflict: 'campaign_id,key', ignoreDuplicates: true },
     )
     if (fieldErr) fail(`field ${f.key} upsert failed: ${fieldErr.message}`)
   }
-  console.log(`✔ campaign fields present: ${HOLLARD_PAYD_FIELDS.map((f) => f.key).join(', ')}`)
+  console.log(`✔ campaign fields present: ${OUTSURANCE_FIELDS.map((f) => f.key).join(', ')}`)
 
   // 3c. Automation (inactive). Existing ones are left untouched.
-  const existingAutomation = (automations ?? []).find((a) => a.name === HOLLARD_PAYD_AUTOMATION.name)
+  const existingAutomation = (automations ?? []).find((a) => a.name === OUTSURANCE_AUTOMATION.name || a.name === OUTSURANCE_LEGACY_AUTOMATION_NAME)
   if (existingAutomation && UPDATE_STEPS) {
-    // Root step positions are unchanged by the preset, so runs paused at
-    // the root resume correctly; a run paused inside a branch points at a
-    // step id that is about to be replaced.
+    // The steps change completely, so a run paused on the old steps
+    // can't resume correctly: end those waits first.
     const { data: waits } = await db
       .from('automation_pending_executions')
-      .select('id, parent_step_id')
+      .select('id, log_id, created_at')
       .eq('automation_id', existingAutomation.id)
       .in('status', ['pending', 'running'])
-    if (waits.some((w) => w.parent_step_id)) fail('a customer is mid-run inside a branch; try again once that run finishes')
+    for (const w of waits ?? []) {
+      await db.from('automation_pending_executions').update({ status: 'failed' }).eq('id', w.id)
+      if (w.log_id) await db.from('automation_logs').update({ status: 'failed', error_message: 'run ended when the automation was replaced' }).eq('id', w.log_id)
+      console.log(`✔ ended an open reply wait from ${w.created_at}`)
+    }
     const { data: oldSteps } = await db.from('automation_steps').select('*').eq('automation_id', existingAutomation.id)
-    const backupDir = path.join(root, 'docs', 'hollard-payd')
+    const backupDir = path.join(root, 'docs', 'outsurance')
     const backup = path.join(backupDir, `automation-steps-before-${Date.now()}.json`)
     fs.writeFileSync(backup, JSON.stringify({ automation: existingAutomation, automation_steps: oldSteps }, null, 1))
-    const rows = flattenSteps(existingAutomation.id, hollardPaydSteps(campaign.id))
+    const rows = flattenSteps(existingAutomation.id, outsuranceSteps(campaign.id))
     const { error: delErr } = await db.from('automation_steps').delete().eq('automation_id', existingAutomation.id)
     if (delErr) fail(`delete old steps: ${delErr.message}`)
     const { error: insErr } = await db.from('automation_steps').insert(rows)
@@ -279,7 +280,7 @@ if (!APPLY) {
       await db.from('automation_steps').insert(oldSteps)
       fail(`insert new steps failed, old steps restored: ${insErr.message}`)
     }
-    await db.from('automations').update({ description: HOLLARD_PAYD_AUTOMATION.description }).eq('id', existingAutomation.id)
+    await db.from('automations').update({ name: OUTSURANCE_AUTOMATION.name, description: OUTSURANCE_AUTOMATION.description }).eq('id', existingAutomation.id)
     console.log(`✔ updated "${existingAutomation.name}" to the preset (${rows.length} steps, still ${existingAutomation.is_active ? 'ACTIVE' : 'inactive'}); backup → ${path.relative(root, backup)}`)
   } else if (existingAutomation) {
     console.log(`✔ automation "${existingAutomation.name}" already exists (${existingAutomation.is_active ? 'ACTIVE' : 'inactive'}); left unchanged (pass --update-steps to replace its steps)`)
@@ -289,22 +290,43 @@ if (!APPLY) {
       .insert({
         account_id: accountId,
         user_id: ownerId,
-        name: HOLLARD_PAYD_AUTOMATION.name,
-        description: HOLLARD_PAYD_AUTOMATION.description,
-        trigger_type: HOLLARD_PAYD_AUTOMATION.trigger_type,
-        trigger_config: hollardPaydTriggerConfig(campaign.id),
+        name: OUTSURANCE_AUTOMATION.name,
+        description: OUTSURANCE_AUTOMATION.description,
+        trigger_type: OUTSURANCE_AUTOMATION.trigger_type,
+        trigger_config: outsuranceTriggerConfig(campaign.id),
         is_active: false,
       })
       .select('id')
       .single()
     if (error) fail(`automation insert failed: ${error.message}`)
-    const rows = flattenSteps(automation.id, hollardPaydSteps(campaign.id))
+    const rows = flattenSteps(automation.id, outsuranceSteps(campaign.id))
     const { error: stepsErr } = await db.from('automation_steps').insert(rows)
     if (stepsErr) {
       await db.from('automations').delete().eq('id', automation.id)
       fail(`automation steps insert failed (automation removed again): ${stepsErr.message}`)
     }
-    console.log(`✔ created automation "${HOLLARD_PAYD_AUTOMATION.name}" (inactive, ${rows.length} steps)`)
+    console.log(`✔ created automation "${OUTSURANCE_AUTOMATION.name}" (inactive, ${rows.length} steps)`)
+  }
+}
+
+// 3d. The campaign's flow copy (manual trigger; never starts on its own):
+// rename the old Hollard flow if there is one and refresh its nodes.
+if (APPLY) {
+  const preset = CAMPAIGN_FLOWS.find((f) => f.campaign_code === OUTSURANCE_CAMPAIGN.code)
+  const flow = (flows ?? []).find((f) => f.name === preset.name || f.name === 'Hollard Pay as You Drive — Flow')
+  if (flow) {
+    if (flow.trigger_type !== 'manual') fail(`flow "${flow.name}" is not manual-trigger; not touching it`)
+    const { data: oldNodes } = await db.from('flow_nodes').select('*').eq('flow_id', flow.id)
+    await db.from('flow_nodes').delete().eq('flow_id', flow.id)
+    const { error: nErr } = await db
+      .from('flow_nodes')
+      .insert(preset.nodes.map((n) => ({ flow_id: flow.id, node_key: n.node_key, node_type: n.node_type, config: n.config })))
+    if (nErr) {
+      await db.from('flow_nodes').insert(oldNodes)
+      fail(`flow refresh failed, old nodes restored: ${nErr.message}`)
+    }
+    await db.from('flows').update({ name: preset.name, description: preset.description, entry_node_id: preset.entry_node_id }).eq('id', flow.id)
+    console.log(`✔ flow "${flow.name}" is now "${preset.name}" (${preset.nodes.length} nodes, ${flow.status})`)
   }
 }
 
