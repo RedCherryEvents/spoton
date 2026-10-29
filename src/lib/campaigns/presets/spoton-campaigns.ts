@@ -172,32 +172,30 @@ const endNode: PresetFlowNode = { node_key: 'end', node_type: 'end', config: {} 
 
 export const CAMPAIGN_FLOWS: PresetFlow[] = [
   {
-    name: 'Coca-Cola Summer Competition — Flow',
-    description: 'Flow version of the Coca-Cola Summer Competition automation. Start it from the automation with a Start Flow step.',
-    campaign_code: 'COKE',
+    name: 'Share a Coke — Win R20,000 — Flow',
+    description:
+      'Flow version of the Share a Coke conversation. Flows cannot record campaign entries or enforce the one-entry rule, so the automation remains the entry point.',
+    campaign_code: 'SHAREACOKE',
     trigger_type: 'manual',
     trigger_config: {},
     entry_node_id: 'start',
     nodes: [
-      { node_key: 'start', node_type: 'start', config: { next_node_key: 'welcome' } },
-      {
-        node_key: 'welcome',
-        node_type: 'send_message',
-        config: {
-          text: '🥤 Welcome to Coca-Cola!\n\nReady to be part of the excitement? Watch this video to discover more:\n\nhttps://youtu.be/0Ab-F7Y3IXc',
-          next_node_key: 'ask_share',
-        },
-      },
+      { node_key: 'start', node_type: 'start', config: { next_node_key: 'ask_share' } },
       {
         node_key: 'ask_share',
         node_type: 'collect_input',
-        config: { prompt_text: 'Who will you Share A Coke with?', var_key: 'answer', next_node_key: 'thanks' },
+        config: {
+          prompt_text:
+            'Welcome to Share a Coke! You could win R20,000! Tell us who you would share a Coke with and why. Reply with your answer to enter the competition. Terms and conditions apply.\n\nWatch the advert: https://www.youtube.com/watch?v=0Ab-F7Y3IXc',
+          var_key: 'share_answer',
+          next_node_key: 'confirmation',
+        },
       },
       {
-        node_key: 'thanks',
+        node_key: 'confirmation',
         node_type: 'send_message',
         config: {
-          text: 'Life is full of distractions. Meetings, homework, chores, and commitments. But our best memories are made when we allow ourselves to slow down and come together. Share a Coke is a reminder to do just that.\n\nFind the name of a friend, family, loved one or anyone important in your life and come together over an ice-cold Coca-Cola.\n\n#ShareACoke #RealMagic #ShareACocaCola #CocaCola',
+          text: 'Thanks for entering Share a Coke! Your competition entry has been received. Good luck! Please refer to the official terms and conditions for eligibility, closing dates and winner selection.',
           next_node_key: 'closing',
         },
       },
@@ -335,7 +333,7 @@ export const UNIVERSAL_WELCOME = {
 /** Button title must contain the campaign keyword (taps are matched by title). */
 export const UNIVERSAL_WELCOME_BUTTONS = [
   { id: 'menu_outsurance', title: 'SAVE – OUTsurance', keyword: 'SAVE' },
-  { id: 'menu_coke', title: 'WINCOKE – Coca-Cola', keyword: 'WINCOKE' },
+  // Share a Coke is Draft: add { id: 'menu_coke', title: 'SHAREACOKE – Coke', keyword: 'SHAREACOKE' } back at launch.
   { id: 'menu_icc', title: 'WINICC2027 – ICC', keyword: 'WINICC2027' },
 ]
 

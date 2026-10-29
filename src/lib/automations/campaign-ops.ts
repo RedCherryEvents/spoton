@@ -7,6 +7,7 @@ import { parseAnswers, upsertAnswer } from '@/lib/campaigns/answers'
 import { findDuplicateMatch, parseDuplicateRule } from '@/lib/campaigns/duplicate'
 import { appendEntryEvent } from '@/lib/campaigns/events'
 import { normalizeEntryStatus } from '@/lib/campaigns/status'
+import { campaignEntryGate, type EntryClosedReason } from '@/lib/campaigns/entry-gate'
 import { supabaseAdmin } from './admin-client'
 
 export interface CampaignSnapshot {
@@ -15,6 +16,7 @@ export interface CampaignSnapshot {
   code: string
   keyword: string | null
   status: string
+  terms_url: string | null
 }
 
 export interface EntrySnapshot {
@@ -99,6 +101,17 @@ export interface AddCampaignEntryResult {
   entry: CampaignEntry
   created: boolean
   duplicate: boolean
+  /** Entered from a test number while the campaign is Draft. */
+  test?: boolean
+  /** The campaign's duplicate_message, when this entry is a duplicate. */
+  duplicateMessage?: string | null
+}
+
+/** The campaign isn't taking entries from this contact right now. */
+export interface CampaignNotOpen {
+  closed: EntryClosedReason
+  /** campaign.settings.closed_message, if set. */
+  message: string | null
 }
 
 /**
@@ -112,18 +125,22 @@ export interface AddCampaignEntryResult {
  */
 export async function addCampaignEntry(
   args: AddCampaignEntryArgs,
-): Promise<AddCampaignEntryResult | { error: string }> {
+): Promise<AddCampaignEntryResult | CampaignNotOpen | { error: string }> {
   const campaign = await loadCampaign(args.accountId, args.campaignId)
   if (!campaign) return { error: 'campaign not found' }
-  if (campaign.status !== 'active') {
-    return { error: `campaign is ${campaign.status}` }
-  }
-
-  const open = await loadOpenEntry(args.accountId, args.campaignId, args.contactId)
-  if (open) return { entry: open, created: false, duplicate: false }
 
   const contact = await loadContact(args.accountId, args.contactId)
   if (!contact) return { error: 'contact not found' }
+
+  // Status, opening/closing dates, and test numbers while Draft.
+  const gate = campaignEntryGate(campaign, contact.phone)
+  if (!gate.open) {
+    const message = campaign.settings?.closed_message?.trim()
+    return { closed: gate.reason, message: message || null }
+  }
+
+  const open = await loadOpenEntry(args.accountId, args.campaignId, args.contactId)
+  if (open) return { entry: open, created: false, duplicate: false, test: gate.test }
 
   const rule = parseDuplicateRule(campaign.settings?.duplicate_rule)
   const existing = await listCampaignEntriesForDuplicate(args.accountId, args.campaignId)
@@ -155,6 +172,14 @@ export async function addCampaignEntry(
     label: 'Campaign started',
     at: now,
   })
+  if (gate.test) {
+    metadata.test = true
+    metadata = appendEntryEvent(metadata, {
+      type: 'test_entry',
+      label: 'Test entry (campaign is Draft)',
+      at: now,
+    })
+  }
   if (args.source === 'automation' || args.automationId) {
     metadata = appendEntryEvent(metadata, {
       type: 'automation_started',
@@ -194,10 +219,16 @@ export async function addCampaignEntry(
 
   if (error || !data) {
     const raced = await loadOpenEntry(args.accountId, args.campaignId, args.contactId)
-    if (raced) return { entry: raced, created: false, duplicate: false }
+    if (raced) return { entry: raced, created: false, duplicate: false, test: gate.test }
     return { error: error?.message ?? 'failed to add campaign entry' }
   }
-  return { entry: hydrateEntry(data), created: true, duplicate: isDuplicate }
+  return {
+    entry: hydrateEntry(data),
+    created: true,
+    duplicate: isDuplicate,
+    test: gate.test,
+    duplicateMessage: isDuplicate ? campaign.settings?.duplicate_message?.trim() || null : null,
+  }
 }
 
 export async function setCampaignEntryStatus(args: {
@@ -371,6 +402,7 @@ export function campaignSnapshot(c: Campaign): CampaignSnapshot {
     code: c.code,
     keyword: c.keyword ?? null,
     status: c.status,
+    terms_url: c.settings?.terms_url?.trim() || null,
   }
 }
 

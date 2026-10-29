@@ -56,7 +56,13 @@ export async function POST(
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
-    if (result.created && !result.duplicate) {
+    if ('closed' in result) {
+      return NextResponse.json(
+        { error: `This campaign isn't taking entries right now (${result.closed.replace('_', ' ')}).` },
+        { status: 400 },
+      )
+    }
+    if (result.created && !result.duplicate && !result.test) {
       await runAutomationsForTrigger({
         accountId: ctx.accountId,
         triggerType: 'campaign_entry',

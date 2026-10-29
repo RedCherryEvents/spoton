@@ -32,7 +32,7 @@ export async function PATCH(
     for (const key of ['name', 'code', 'keyword', 'description', 'status', 'starts_at', 'ends_at']) {
       if (key in body) patch[key] = body[key]
     }
-    if (patch.status && !['draft', 'active', 'paused', 'archived'].includes(String(patch.status))) {
+    if (patch.status && !['draft', 'active', 'paused', 'closed', 'archived'].includes(String(patch.status))) {
       return NextResponse.json({ error: 'invalid status' }, { status: 400 })
     }
     if (body.settings && typeof body.settings === 'object' && !Array.isArray(body.settings)) {
@@ -42,6 +42,10 @@ export async function PATCH(
         'brand_color',
         'logo_url',
         'whatsapp_number',
+        'terms_url',
+        'test_numbers',
+        'closed_message',
+        'duplicate_message',
       ])
       const next = { ...(existing.settings ?? {}) } as Record<string, unknown>
       const incoming = body.settings as Record<string, unknown>
@@ -49,6 +53,23 @@ export async function PATCH(
         if (!allowedSettings.has(key)) continue
         if (value === null || value === '') delete next[key]
         else next[key] = value
+      }
+      if (next.terms_url !== undefined) {
+        try {
+          const u = new URL(String(next.terms_url))
+          if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('bad protocol')
+        } catch {
+          return NextResponse.json({ error: 'T&C link must be a full web address (https://…)' }, { status: 400 })
+        }
+      }
+      if (next.test_numbers !== undefined) {
+        const raw = Array.isArray(next.test_numbers) ? next.test_numbers : String(next.test_numbers).split(/[,\n]/)
+        const numbers = raw.map((n) => String(n).replace(/\D/g, '')).filter((n) => n.length >= 9)
+        if (numbers.length === 0) delete next.test_numbers
+        else next.test_numbers = [...new Set(numbers)]
+      }
+      for (const key of ['closed_message', 'duplicate_message'] as const) {
+        if (next[key] !== undefined) next[key] = String(next[key]).slice(0, 1000)
       }
       if (next.whatsapp_number !== undefined) {
         const n = normalizeWhatsAppNumber(String(next.whatsapp_number))
@@ -67,6 +88,17 @@ export async function PATCH(
         }
       }
       patch.settings = next
+    }
+
+    // A competition can't go live without its published T&Cs.
+    if (patch.status === 'active') {
+      const settings = (patch.settings ?? existing.settings ?? {}) as { terms_required?: boolean; terms_url?: string }
+      if (settings.terms_required && !settings.terms_url) {
+        return NextResponse.json(
+          { error: 'Add the terms & conditions link (Settings) before activating this campaign.' },
+          { status: 400 },
+        )
+      }
     }
 
     const { data, error } = await ctx.supabase

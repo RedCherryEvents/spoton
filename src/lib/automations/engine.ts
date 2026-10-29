@@ -94,6 +94,7 @@ export interface AutomationContext {
     code?: string
     keyword?: string | null
     status?: string
+    terms_url?: string | null
   }
   entry?: {
     id?: string
@@ -764,6 +765,11 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
       })
     } catch (err) {
       if (err instanceof AutomationEnded) {
+        // A step (not the End step, which logs itself) stopped the run:
+        // record why.
+        if (step.step_type !== 'end') {
+          results.push({ step_id: step.id, step_type: step.step_type, status: 'success', detail: err.message })
+        }
         if (args.parentStepId === null) {
           await appendResults(args.logId, results, 'success', null)
         } else {
@@ -1217,6 +1223,24 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         messageText: args.context.message_text,
       })
       if ('error' in result) throw new Error(result.error)
+      if ('closed' in result) {
+        // Not taking entries (draft without a test number, paused,
+        // closed, archived, or outside its dates). Say so if the
+        // campaign has a message for it, except while Draft (don't
+        // reveal an unlaunched campaign), then stop this run cleanly.
+        if (result.message && result.closed !== 'draft') {
+          const conversationId = await resolveConversationId(args)
+          await engineSendText({
+            accountId: args.automation.account_id,
+            userId: args.automation.user_id,
+            conversationId,
+            contactId: args.contactId,
+            text: interpolate(result.message, args),
+          })
+          throw new AutomationEnded(`campaign not open (${result.closed}); not-open message sent`)
+        }
+        throw new AutomationEnded(`campaign not open (${result.closed})`)
+      }
       args.context.campaign_id = cfg.campaign_id
       args.context.entry = {
         id: result.entry.id,
@@ -1225,8 +1249,23 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       }
       const campaign = await loadCampaign(args.automation.account_id, cfg.campaign_id)
       if (campaign) args.context.campaign = campaignSnapshot(campaign)
-      if (result.duplicate) return `entry marked duplicate (${result.entry.id})`
+      if (result.duplicate) {
+        if (result.duplicateMessage) {
+          const conversationId = await resolveConversationId(args)
+          await engineSendText({
+            accountId: args.automation.account_id,
+            userId: args.automation.user_id,
+            conversationId,
+            contactId: args.contactId,
+            text: interpolate(result.duplicateMessage, args),
+          })
+          throw new AutomationEnded(`entry marked duplicate (${result.entry.id}); duplicate message sent`)
+        }
+        return `entry marked duplicate (${result.entry.id})`
+      }
       if (result.created) {
+        // Test entries don't fire campaign_entry automations.
+        if (result.test) return `test entry created (${result.entry.id})`
         await runAutomationsForTrigger({
           accountId: args.automation.account_id,
           triggerType: 'campaign_entry',

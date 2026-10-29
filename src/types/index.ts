@@ -832,7 +832,7 @@ export interface AutomationLog {
 // Campaigns (migration 040)
 // ============================================================
 
-export type CampaignStatus = 'draft' | 'active' | 'paused' | 'archived';
+export type CampaignStatus = 'draft' | 'active' | 'paused' | 'closed' | 'archived';
 export type CampaignEntryStatus =
   | 'in_progress'
   | 'completed'
@@ -855,6 +855,35 @@ export interface CampaignSettings {
   logo_url?: string;
   /** Digits-only number customers message; drives the wa.me entry link + QR code. */
   whatsapp_number?: string;
+  /** Published terms & conditions; available to messages as {{campaign.terms_url}}. */
+  terms_url?: string;
+  /** When true, the campaign can't be activated until terms_url is set. */
+  terms_required?: boolean;
+  /** While the campaign is Draft, only these numbers can enter (test entries). */
+  test_numbers?: string[];
+  /** Sent instead of silence when someone messages while it isn't open. */
+  closed_message?: string;
+  /** Sent (and the run ends) when an entry would be a duplicate. */
+  duplicate_message?: string;
+}
+
+export interface CampaignDraw {
+  id: string;
+  campaign_id: string;
+  account_id: string;
+  drawn_by: string;
+  drawn_at: string;
+  method: 'random';
+  pool_entry_ids: string[];
+  pool_size: number;
+  pool_hash: string;
+  random_index: number;
+  winner_entry_id: string;
+  note?: string | null;
+  notified_at?: string | null;
+  notified_by?: string | null;
+  notification_template?: string | null;
+  notification_message_id?: string | null;
 }
 
 export interface Campaign {

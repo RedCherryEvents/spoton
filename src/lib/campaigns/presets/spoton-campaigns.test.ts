@@ -11,6 +11,7 @@ import {
   type PresetStep,
 } from "./spoton-campaigns";
 import { OUTSURANCE_MESSAGES, OUTSURANCE_NAME_VAR, outsuranceTriggerConfig } from "./outsurance";
+import { shareACokeTriggerConfig } from "./share-a-coke";
 import { validateStepsForActivation, validateTriggerForActivation } from "@/lib/automations/validate";
 import { keywordTextMatches } from "@/lib/automations/keyword-match";
 import { validateFlowForActivation } from "@/lib/flows/validate";
@@ -110,7 +111,7 @@ describe("Universal Welcome", () => {
   // Live trigger configs of the campaign automations the buttons point at.
   const triggers = {
     SAVE: outsuranceTriggerConfig("camp-o"),
-    WINCOKE: { keywords: ["WINCOKE", "SHARECOKE2026", "Coke", "Share"], match_type: "contains" as const },
+    SHAREACOKE: shareACokeTriggerConfig("camp-c"),
     WINICC2027: { keywords: ["WINICC2027"], match_type: "contains" as const },
   };
 

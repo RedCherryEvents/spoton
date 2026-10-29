@@ -1265,3 +1265,88 @@ describe("webhook routing helpers", () => {
     expect(await hasOpenReplyWait(ACCOUNT, "c1")).toBe(false);
   });
 });
+
+describe("campaign_add_entry — not open, repeats, test entries", () => {
+  function setUp() {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [messageTrigger()];
+    h.state.steps = [
+      step(0, "campaign_add_entry", { campaign_id: "camp" }),
+      step(1, "send_message", { text: "welcome" }),
+    ];
+  }
+  const run = () =>
+    runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "SHAREACOKE", conversation_id: "conv1" },
+    });
+  const loggedDetails = () =>
+    h.state.logUpdates.flatMap((u) => ((u.steps_executed as { detail?: string }[] | undefined) ?? []).map((r) => r.detail));
+
+  it("closed: sends the campaign's not-open message, sends nothing else, and logs why", async () => {
+    setUp();
+    vi.mocked(addCampaignEntry).mockResolvedValue({ closed: "closed", message: "Not open right now." });
+    await run();
+    expect(vi.mocked(engineSendText).mock.calls.map(([a]) => a.text)).toEqual(["Not open right now."]);
+    expect(loggedDetails()).toContain("campaign not open (closed); not-open message sent");
+    expect(h.state.logUpdates.at(-1)).toMatchObject({ status: "success" });
+  });
+
+  it("draft: stays silent for non-test contacts, even with a not-open message", async () => {
+    setUp();
+    vi.mocked(addCampaignEntry).mockResolvedValue({ closed: "draft", message: "Not open right now." });
+    await run();
+    expect(engineSendText).not.toHaveBeenCalled();
+    expect(loggedDetails()).toContain("campaign not open (draft)");
+  });
+
+  it("not open without a message: silent, run ends cleanly", async () => {
+    setUp();
+    vi.mocked(addCampaignEntry).mockResolvedValue({ closed: "ended", message: null });
+    await run();
+    expect(engineSendText).not.toHaveBeenCalled();
+  });
+
+  it("repeat entry with a duplicate message: sends it and stops before the questions", async () => {
+    setUp();
+    vi.mocked(addCampaignEntry).mockResolvedValue({
+      entry: { id: "e2", status: "duplicate", entry_reference: null } as never,
+      created: true,
+      duplicate: true,
+      duplicateMessage: "You've already entered.",
+    });
+    await run();
+    expect(vi.mocked(engineSendText).mock.calls.map(([a]) => a.text)).toEqual(["You've already entered."]);
+  });
+
+  it("repeat entry without a duplicate message: carries on as before", async () => {
+    setUp();
+    vi.mocked(addCampaignEntry).mockResolvedValue({
+      entry: { id: "e2", status: "duplicate", entry_reference: null } as never,
+      created: true,
+      duplicate: true,
+      duplicateMessage: null,
+    });
+    await run();
+    expect(vi.mocked(engineSendText).mock.calls.map(([a]) => a.text)).toEqual(["welcome"]);
+  });
+
+  it("test entry: carries on, but doesn't fire campaign_entry automations", async () => {
+    setUp();
+    h.state.automations = [
+      messageTrigger(),
+      { id: "a2", account_id: ACCOUNT, user_id: "u1", name: "on entry", trigger_type: "campaign_entry", trigger_config: {}, is_active: true },
+    ];
+    vi.mocked(addCampaignEntry).mockResolvedValue({
+      entry: { id: "e3", status: "in_progress", entry_reference: null } as never,
+      created: true,
+      duplicate: false,
+      test: true,
+    });
+    await run();
+    expect(loggedDetails()).toContain("test entry created (e3)");
+    expect(h.state.logInserts.map((l) => l.trigger_event)).toEqual(["new_message_received"]);
+  });
+});

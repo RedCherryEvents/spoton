@@ -15,6 +15,7 @@ import { CampaignOverviewTab } from '@/components/campaigns/overview-tab'
 import { CampaignEntriesTab } from '@/components/campaigns/entries-tab'
 import { CampaignSettingsTab } from '@/components/campaigns/settings-tab'
 import { CampaignAutomationTab } from '@/components/campaigns/automation-tab'
+import { CampaignWinnerTab } from '@/components/campaigns/winner-tab'
 
 export default function CampaignDetailPage() {
   const params = useParams<{ id: string }>()
@@ -128,7 +129,7 @@ export default function CampaignDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline">{t(`status.${campaign.status}`)}</Badge>
-          {campaign.status !== 'active' && (
+          {campaign.status !== 'active' && campaign.status !== 'closed' && (
             <Button size="sm" onClick={() => void savePatch({ status: 'active' })} disabled={saving}>
               {t('activate')}
             </Button>
@@ -136,6 +137,18 @@ export default function CampaignDetailPage() {
           {campaign.status === 'active' && (
             <Button size="sm" variant="outline" onClick={() => void savePatch({ status: 'paused' })} disabled={saving}>
               {t('pause')}
+            </Button>
+          )}
+          {(campaign.status === 'active' || campaign.status === 'paused') && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (window.confirm(t('confirmClose'))) void savePatch({ status: 'closed' })
+              }}
+              disabled={saving}
+            >
+              {t('close')}
             </Button>
           )}
         </div>
@@ -146,6 +159,7 @@ export default function CampaignDetailPage() {
           <TabsTrigger value="overview">{t('tabs.overview')}</TabsTrigger>
           <TabsTrigger value="entries">{t('tabs.entries')}</TabsTrigger>
           <TabsTrigger value="automation">{t('tabs.automation')}</TabsTrigger>
+          <TabsTrigger value="winner">{t('tabs.winner')}</TabsTrigger>
           <TabsTrigger value="settings">{t('tabs.settings')}</TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="pt-4">
@@ -166,6 +180,9 @@ export default function CampaignDetailPage() {
         </TabsContent>
         <TabsContent value="automation" className="pt-4">
           <CampaignAutomationTab campaignId={campaign.id} />
+        </TabsContent>
+        <TabsContent value="winner" className="pt-4">
+          <CampaignWinnerTab campaignId={campaign.id} />
         </TabsContent>
         <TabsContent value="settings" className="pt-4">
           <CampaignSettingsTab
