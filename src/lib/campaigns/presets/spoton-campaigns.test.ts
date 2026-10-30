@@ -111,7 +111,7 @@ describe("Universal Welcome", () => {
   // Live trigger configs of the campaign automations the buttons point at.
   const triggers = {
     SAVE: outsuranceTriggerConfig("camp-o"),
-    SHAREACOKE: shareACokeTriggerConfig("camp-c"),
+    SHARE: shareACokeTriggerConfig("camp-c"),
     WINICC2027: { keywords: ["WINICC2027"], match_type: "contains" as const },
   };
 

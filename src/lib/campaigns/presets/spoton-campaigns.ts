@@ -333,7 +333,7 @@ export const UNIVERSAL_WELCOME = {
 /** Button title must contain the campaign keyword (taps are matched by title). */
 export const UNIVERSAL_WELCOME_BUTTONS = [
   { id: 'menu_outsurance', title: 'SAVE – OUTsurance', keyword: 'SAVE' },
-  // Share a Coke is Draft: add { id: 'menu_coke', title: 'SHAREACOKE – Coke', keyword: 'SHAREACOKE' } back at launch.
+  // Share a Coke is Draft: add { id: 'menu_coke', title: 'SHARE – Coca-Cola', keyword: 'SHARE' } back at launch.
   { id: 'menu_icc', title: 'WINICC2027 – ICC', keyword: 'WINICC2027' },
 ]
 
