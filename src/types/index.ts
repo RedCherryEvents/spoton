@@ -503,6 +503,7 @@ export type AutomationStepType =
   | 'campaign_set_status'
   | 'campaign_generate_reference'
   | 'campaign_set_field'
+  | 'set_language'
   | 'start_flow';
 
 export type AutomationLogStatus = 'success' | 'partial' | 'failed';
@@ -694,6 +695,16 @@ export interface CampaignSetFieldStepConfig {
   value: string;
 }
 
+/**
+ * Save the customer's language as a "Language: <name>" contact tag
+ * (replacing any other language tag). `value` is interpolated, then
+ * read as a language name or code ("isiZulu", "zu"). Later message
+ * steps send their `translations` for that language.
+ */
+export interface SetLanguageStepConfig {
+  value: string;
+}
+
 export interface StartFlowStepConfig {
   flow_id: string;
 }
@@ -773,6 +784,7 @@ export type AutomationStepConfig =
   | CampaignSetStatusStepConfig
   | CampaignGenerateReferenceStepConfig
   | CampaignSetFieldStepConfig
+  | SetLanguageStepConfig
   | StartFlowStepConfig
   | Record<string, never>
   | Record<string, unknown>;
@@ -848,7 +860,17 @@ export type CampaignDuplicateRule =
   | 'whatsapp_per_day'
   | 'unlimited';
 
+export type CampaignType = 'competition' | 'insurance' | 'voucher' | 'survey' | 'lead_gen' | 'other';
+
 export interface CampaignSettings {
+  /** What kind of campaign this is; shown in the campaign list. */
+  type?: CampaignType;
+  /**
+   * The correct answer for a competition question: entries whose
+   * answer to `field_key` matches `value` count as correct. Several
+   * answers can be given separated by "|".
+   */
+  correct_answer?: { field_key: string; value: string };
   duplicate_rule?: CampaignDuplicateRule;
   client_name?: string;
   brand_color?: string;

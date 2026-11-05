@@ -33,6 +33,7 @@ import type {
   CampaignSetStatusStepConfig,
   CampaignGenerateReferenceStepConfig,
   CampaignSetFieldStepConfig,
+  SetLanguageStepConfig,
   StartFlowStepConfig,
   RandomSplitStepConfig,
   GoToStepConfig,
@@ -57,6 +58,20 @@ import {
 } from './campaign-ops'
 import { minuteKey, scheduleMatchesNow } from './schedule'
 import { keywordTextMatches } from './keyword-match'
+import {
+  LANGUAGE_TAG_PREFIX,
+  languageFromTagName,
+  languageName,
+  languageTagName,
+  localizeStepConfig,
+  normalizeLanguage,
+} from './language'
+import {
+  INBOUND_TRIGGER_TYPES,
+  automationsForTrigger,
+  type InboundRouting,
+  type PendingReplyWait,
+} from './inbound-routing'
 
 export { matchesWholeWord, keywordTextMatches } from './keyword-match'
 
@@ -83,6 +98,8 @@ export interface AutomationContext {
   campaign_id?: string
   contact?: {
     id?: string
+    /** Language code from the contact's "Language: …" tag (null = none set). */
+    language?: string | null
     name?: string | null
     phone?: string | null
     email?: string | null
@@ -125,6 +142,19 @@ export interface DispatchInput {
   context?: AutomationContext
   /** Overrides `triggerType` in automation_logs.trigger_event (e.g. `flow:<id>`). */
   triggerEvent?: string
+  /**
+   * Active automations already loaded by the caller (the webhook loads
+   * every inbound trigger type at once). Filtered to `triggerType` here;
+   * omit to query.
+   */
+  prefetched?: Automation[]
+  /**
+   * The caller has just resolved `contactId` within `accountId` (the
+   * webhook finds or creates the contact for the account itself), so the
+   * ownership query can be skipped. Never set this for a caller-supplied
+   * contact id.
+   */
+  contactVerified?: boolean
 }
 
 /**
@@ -150,7 +180,7 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<nu
     // contact, verify it actually belongs to this account. A foreign or
     // forged id is refused silently — callers are fire-and-forget, and a
     // distinct error would leak whether a given contact UUID exists.
-    if (input.contactId) {
+    if (input.contactId && !input.contactVerified) {
       const { data: owned, error: ownErr } = await db
         .from('contacts')
         .select('id')
@@ -167,20 +197,25 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<nu
       }
     }
 
-    const { data: automations, error } = await db
-      .from('automations')
-      .select('*')
-      .eq('account_id', input.accountId)
-      .eq('trigger_type', input.triggerType)
-      .eq('is_active', true)
-
-    if (error) {
-      console.error('[automations] fetch failed:', error)
-      return matched
+    let automations: Automation[]
+    if (input.prefetched) {
+      automations = automationsForTrigger(input.prefetched, input.triggerType)
+    } else {
+      const { data, error } = await db
+        .from('automations')
+        .select('*')
+        .eq('account_id', input.accountId)
+        .eq('trigger_type', input.triggerType)
+        .eq('is_active', true)
+      if (error) {
+        console.error('[automations] fetch failed:', error)
+        return matched
+      }
+      automations = (data ?? []) as Automation[]
     }
-    if (!automations || automations.length === 0) return matched
+    if (automations.length === 0) return matched
 
-    for (const automation of automations as Automation[]) {
+    for (const automation of automations) {
       if (!triggerMatches(automation, input.context)) continue
       matched++
       try {
@@ -243,39 +278,71 @@ export async function runAutomationById(args: {
 }
 
 /**
- * True when an active keyword automation matches this text. The webhook
- * uses it so a first message that is a campaign keyword goes to that
- * campaign instead of starting a first-message flow.
+ * Everything the webhook needs to route an inbound message, in one
+ * parallel round trip: the account's active automations for every
+ * inbound trigger type, and the contact's pending reply wait.
  */
-export async function keywordAutomationMatches(accountId: string, text: string): Promise<boolean> {
-  if (!text.trim()) return false
-  const { data, error } = await supabaseAdmin()
-    .from('automations')
-    .select('trigger_type, trigger_config')
-    .eq('account_id', accountId)
-    .eq('trigger_type', 'keyword_match')
-    .eq('is_active', true)
-  if (error || !data) return false
-  return (data as Automation[]).some((a) => triggerMatches(a, { message_text: text }))
+export async function loadInboundRouting(
+  accountId: string,
+  contactId: string,
+): Promise<InboundRouting> {
+  const db = supabaseAdmin()
+  const [autoRes, waitRes] = await Promise.all([
+    db
+      .from('automations')
+      .select('*')
+      .eq('account_id', accountId)
+      .eq('is_active', true)
+      .in('trigger_type', [...INBOUND_TRIGGER_TYPES]),
+    db
+      .from('automation_pending_executions')
+      .select('*')
+      .eq('account_id', accountId)
+      .eq('contact_id', contactId)
+      .eq('status', 'pending')
+      .eq('wait_kind', 'inbound_reply')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  ])
+  if (autoRes.error) console.error('[automations] inbound routing fetch failed:', autoRes.error)
+  if (waitRes.error) console.error('[automations] inbound wait lookup failed:', waitRes.error)
+  return {
+    automations: (autoRes.data ?? []) as Automation[],
+    replyWait: (waitRes.data as PendingReplyWait | null) ?? null,
+  }
 }
 
 /**
- * True when the contact is answering an automation's question (an open,
- * unexpired reply wait). The webhook then doesn't let a flow start, so
- * the answer reaches the automation.
+ * Release a reply wait that has nothing after it. Resuming such a wait
+ * only stores the answer and ends the run, so it would swallow the
+ * customer's next message (a campaign keyword, say) for nothing.
+ * Returns true when the wait was released; the message is then free
+ * for keyword and other automations.
  */
-export async function hasOpenReplyWait(accountId: string, contactId: string): Promise<boolean> {
-  const { data, error } = await supabaseAdmin()
+export async function releaseDeadEndReplyWait(wait: PendingReplyWait): Promise<boolean> {
+  const db = supabaseAdmin()
+  let q = db
+    .from('automation_steps')
+    .select('id', { count: 'exact', head: true })
+    .eq('automation_id', wait.automation_id)
+    .gte('position', wait.next_step_position)
+  q = wait.parent_step_id === null
+    ? q.is('parent_step_id', null)
+    : q.eq('parent_step_id', wait.parent_step_id).eq('branch', wait.branch ?? 'yes')
+  const { count, error } = await q
+  if (error || count === null || count > 0) return false
+
+  const { data: claim } = await db
     .from('automation_pending_executions')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
+    .update({ status: 'done' })
+    .eq('id', wait.id)
     .eq('status', 'pending')
-    .eq('wait_kind', 'inbound_reply')
-    .gt('run_at', new Date().toISOString())
-    .limit(1)
-  if (error) return false
-  return (data ?? []).length > 0
+    .select('id')
+    .maybeSingle()
+  if (!claim) return false
+  await finalizeLog(wait.log_id, 'success', null)
+  return true
 }
 
 /**
@@ -290,22 +357,32 @@ export async function tryResumeInboundWait(args: {
   messageText: string
   /** Set when the inbound is a button / list-row tap. */
   interactiveReplyId?: string | null
+  /**
+   * The wait, already loaded by `loadInboundRouting`. `null` means the
+   * caller looked and there is none; omit to look it up here.
+   */
+  pending?: PendingReplyWait | null
 }): Promise<boolean> {
   const db = supabaseAdmin()
-  const { data: row, error } = await db
-    .from('automation_pending_executions')
-    .select('*')
-    .eq('account_id', args.accountId)
-    .eq('contact_id', args.contactId)
-    .eq('status', 'pending')
-    .eq('wait_kind', 'inbound_reply')
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle()
-
-  if (error) {
-    console.error('[automations] inbound wait lookup failed:', error)
-    return false
+  let row: PendingReplyWait | null
+  if (args.pending !== undefined) {
+    row = args.pending
+  } else {
+    const { data, error } = await db
+      .from('automation_pending_executions')
+      .select('*')
+      .eq('account_id', args.accountId)
+      .eq('contact_id', args.contactId)
+      .eq('status', 'pending')
+      .eq('wait_kind', 'inbound_reply')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (error) {
+      console.error('[automations] inbound wait lookup failed:', error)
+      return false
+    }
+    row = (data as PendingReplyWait | null) ?? null
   }
   if (!row) return false
 
@@ -515,33 +592,35 @@ export async function resumePendingExecution(pending: {
 
 async function executeAutomation(automation: Automation, input: DispatchInput) {
   const db = supabaseAdmin()
-  const context = await hydrateContext(automation.account_id, input.contactId ?? null, input.context ?? {})
-
-  const { data: log, error: logErr } = await db
-    .from('automation_logs')
-    .insert({
-      automation_id: automation.id,
-      // Tenancy: matches automation.account_id (NOT NULL post-017).
-      account_id: automation.account_id,
-      // Audit: keeps the historical "author of this automation"
-      // pointer so logs still attribute to the right user even
-      // after teammates join the account.
-      user_id: automation.user_id,
-      contact_id: input.contactId ?? null,
-      trigger_event: input.triggerEvent ?? input.triggerType,
-      steps_executed: [],
-      // Seeded pessimistically. The row is written BEFORE any step runs,
-      // and every terminal path below overwrites it (`appendResults` at
-      // the outermost scope, or `finalizeLog`). Seeding 'success' meant a
-      // run that died mid-flight — the process frozen, the pod recycled —
-      // left a permanent `status: 'success'` with `steps_executed: []`,
-      // indistinguishable from an automation that genuinely had nothing
-      // to do. 'failed' inverts that: the status only becomes success if
-      // execution actually reached the end. See issue #409.
-      status: 'failed',
-    })
-    .select()
-    .single()
+  // The log row doesn't depend on the context, so both go out together.
+  const [context, { data: log, error: logErr }] = await Promise.all([
+    hydrateContext(automation.account_id, input.contactId ?? null, input.context ?? {}),
+    db
+      .from('automation_logs')
+      .insert({
+        automation_id: automation.id,
+        // Tenancy: matches automation.account_id (NOT NULL post-017).
+        account_id: automation.account_id,
+        // Audit: keeps the historical "author of this automation"
+        // pointer so logs still attribute to the right user even
+        // after teammates join the account.
+        user_id: automation.user_id,
+        contact_id: input.contactId ?? null,
+        trigger_event: input.triggerEvent ?? input.triggerType,
+        steps_executed: [],
+        // Seeded pessimistically. The row is written BEFORE any step runs,
+        // and every terminal path below overwrites it (`appendResults` at
+        // the outermost scope, or `finalizeLog`). Seeding 'success' meant a
+        // run that died mid-flight — the process frozen, the pod recycled —
+        // left a permanent `status: 'success'` with `steps_executed: []`,
+        // indistinguishable from an automation that genuinely had nothing
+        // to do. 'failed' inverts that: the status only becomes success if
+        // execution actually reached the end. See issue #409.
+        status: 'failed',
+      })
+      .select()
+      .single(),
+  ])
 
   if (logErr || !log) {
     console.error('[automations] cannot create log:', logErr)
@@ -618,7 +697,12 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   let status: 'success' | 'partial' | 'failed' = 'success'
   let errorMessage: string | null = null
 
-  for (const step of steps as AutomationStep[]) {
+  for (const rawStep of steps as AutomationStep[]) {
+    // Send the contact's language when the step has a translation.
+    const step: AutomationStep = {
+      ...rawStep,
+      step_config: localizeStepConfig(rawStep.step_config, args.context.contact?.language),
+    }
     // `wait` and `ask_question` are suspension points: enqueue and stop
     // processing this scope. Cron (delay) or inbound webhook (reply)
     // pick the park up later.
@@ -1330,6 +1414,36 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       })
     }
 
+    case 'set_language': {
+      const cfg = step.step_config as SetLanguageStepConfig
+      if (!args.contactId) throw new Error('set_language needs a contact')
+      const raw = interpolate(cfg.value || '{{vars.language}}', args)
+      const code = normalizeLanguage(raw)
+      if (!code) return `language not recognised ("${raw.slice(0, 40)}"); unchanged`
+      const tagId = await ensureLanguageTag(args.automation, code)
+      // Replace any other language tag, then add this one.
+      const { data: current } = await db
+        .from('contact_tags')
+        .select('tag_id, tags(name)')
+        .eq('contact_id', args.contactId)
+      const stale = (current ?? [])
+        .filter((row) => {
+          const tag = Array.isArray(row.tags) ? row.tags[0] : row.tags
+          return row.tag_id !== tagId && String((tag as { name?: string } | null)?.name ?? '').startsWith(LANGUAGE_TAG_PREFIX)
+        })
+        .map((row) => row.tag_id as string)
+      if (stale.length) {
+        await db.from('contact_tags').delete().eq('contact_id', args.contactId).in('tag_id', stale)
+      }
+      await addContactTagIfAbsent(db, {
+        accountId: args.automation.account_id,
+        contactId: args.contactId,
+        tagId,
+      })
+      args.context.contact = { ...(args.context.contact ?? {}), language: code }
+      return `language set to ${languageName(code)}`
+    }
+
     case 'start_flow': {
       const cfg = step.step_config as StartFlowStepConfig
       if (!args.contactId || !cfg.flow_id) throw new Error('start_flow needs contact + flow_id')
@@ -1766,41 +1880,87 @@ async function hydrateContext(
     vars: { ...(incoming.vars ?? {}) },
   }
   const db = supabaseAdmin()
-  if (contactId && !ctx.contact) {
-    const { data } = await db
-      .from('contacts')
-      .select('id, name, phone, email, company')
-      .eq('id', contactId)
-      .eq('account_id', accountId)
-      .maybeSingle()
-    if (data) ctx.contact = data
-  }
   const campaignId = ctx.campaign_id
-  if (campaignId && !ctx.campaign) {
-    const campaign = await loadCampaign(accountId, campaignId)
-    if (campaign) ctx.campaign = campaignSnapshot(campaign)
+  // Independent lookups: run them together.
+  const [contact, campaign, entry, assignee, language] = await Promise.all([
+    contactId && !ctx.contact
+      ? db
+          .from('contacts')
+          .select('id, name, phone, email, company')
+          .eq('id', contactId)
+          .eq('account_id', accountId)
+          .maybeSingle()
+          .then(({ data }) => data)
+      : null,
+    campaignId && !ctx.campaign ? loadCampaign(accountId, campaignId) : null,
+    campaignId && contactId && !ctx.entry
+      ? loadEntryForContact(accountId, campaignId, contactId)
+      : null,
+    ctx.conversation_id && ctx.conversation?.assignee === undefined
+      ? db
+          .from('conversations')
+          .select('assigned_agent_id')
+          .eq('id', ctx.conversation_id)
+          .eq('account_id', accountId)
+          .maybeSingle()
+          .then(({ data }) => (data?.assigned_agent_id as string | null) ?? null)
+      : undefined,
+    // Re-read on every run and resume, so a language chosen in another
+    // automation (or changed on the contact) applies straight away.
+    contactId ? loadContactLanguage(contactId) : undefined,
+  ])
+  if (contact) ctx.contact = contact
+  if (contactId && ctx.contact && language !== undefined) {
+    ctx.contact = { ...ctx.contact, language }
   }
-  if (campaignId && contactId && !ctx.entry) {
-    const entry = await loadEntryForContact(accountId, campaignId, contactId)
-    if (entry) ctx.entry = {
+  if (campaign) ctx.campaign = campaignSnapshot(campaign)
+  if (entry) {
+    ctx.entry = {
       id: entry.id,
       status: entry.status,
       reference: entry.entry_reference ?? null,
     }
   }
-  if (ctx.conversation_id && ctx.conversation?.assignee === undefined) {
-    const { data } = await db
-      .from('conversations')
-      .select('assigned_agent_id')
-      .eq('id', ctx.conversation_id)
-      .eq('account_id', accountId)
-      .maybeSingle()
-    ctx.conversation = {
-      ...(ctx.conversation ?? {}),
-      assignee: (data?.assigned_agent_id as string | null) ?? null,
-    }
+  if (assignee !== undefined) {
+    ctx.conversation = { ...(ctx.conversation ?? {}), assignee }
   }
   return ctx
+}
+
+/** Language code from the contact's "Language: …" tag, or null. */
+async function loadContactLanguage(contactId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin()
+    .from('contact_tags')
+    .select('tags(name)')
+    .eq('contact_id', contactId)
+  if (error) return null
+  for (const row of data ?? []) {
+    const tag = Array.isArray(row.tags) ? row.tags[0] : row.tags
+    const code = languageFromTagName((tag as { name?: string } | null)?.name)
+    if (code) return code
+  }
+  return null
+}
+
+/** The account's "Language: <name>" tag id, created if missing. */
+async function ensureLanguageTag(automation: Automation, code: Parameters<typeof languageTagName>[0]): Promise<string> {
+  const db = supabaseAdmin()
+  const name = languageTagName(code)
+  const { data: existing } = await db
+    .from('tags')
+    .select('id')
+    .eq('account_id', automation.account_id)
+    .eq('name', name)
+    .limit(1)
+    .maybeSingle()
+  if (existing?.id) return existing.id as string
+  const { data, error } = await db
+    .from('tags')
+    .insert({ account_id: automation.account_id, user_id: automation.user_id, name, color: '#f59e0b' })
+    .select('id')
+    .single()
+  if (error || !data) throw new Error(`could not create tag "${name}": ${error?.message ?? 'unknown error'}`)
+  return data.id as string
 }
 
 async function findStepByNodeId(

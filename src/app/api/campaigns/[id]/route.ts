@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { CAMPAIGN_TYPES } from '@/lib/campaigns/display'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { asJsonError, loadOwnedCampaign } from '@/lib/campaigns/access'
 import { normalizeWhatsAppNumber } from '@/lib/campaigns/whatsapp-link'
@@ -46,6 +47,8 @@ export async function PATCH(
         'test_numbers',
         'closed_message',
         'duplicate_message',
+        'type',
+        'correct_answer',
       ])
       const next = { ...(existing.settings ?? {}) } as Record<string, unknown>
       const incoming = body.settings as Record<string, unknown>
@@ -80,6 +83,16 @@ export async function PATCH(
           )
         }
         next.whatsapp_number = n
+      }
+      if (next.type !== undefined && !(CAMPAIGN_TYPES as string[]).includes(String(next.type))) {
+        return NextResponse.json({ error: 'invalid campaign type' }, { status: 400 })
+      }
+      if (next.correct_answer !== undefined) {
+        const ca = next.correct_answer as { field_key?: unknown; value?: unknown } | null
+        const fieldKey = typeof ca?.field_key === 'string' ? ca.field_key.trim() : ''
+        const value = typeof ca?.value === 'string' ? ca.value.trim().slice(0, 200) : ''
+        if (!fieldKey || !value) delete next.correct_answer
+        else next.correct_answer = { field_key: fieldKey, value }
       }
       if (typeof next.duplicate_rule === 'string') {
         const allowed = ['whatsapp', 'email', 'whatsapp_per_day', 'unlimited']

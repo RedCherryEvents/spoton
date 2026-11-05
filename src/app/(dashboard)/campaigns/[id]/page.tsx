@@ -9,7 +9,8 @@ import type { Campaign, CampaignFieldDefinition } from '@/types'
 import type { CampaignStats } from '@/lib/campaigns/stats'
 import type { EntryFilters, HydratedCampaignEntry } from '@/lib/campaigns/query'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { CampaignStatusPill } from '@/components/campaigns/campaign-status-pill'
+import { campaignDisplayStatus } from '@/lib/campaigns/display'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CampaignOverviewTab } from '@/components/campaigns/overview-tab'
 import { CampaignEntriesTab } from '@/components/campaigns/entries-tab'
@@ -30,6 +31,7 @@ export default function CampaignDetailPage() {
   const [loading, setLoading] = useState(true)
   const [entriesLoading, setEntriesLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [tab, setTab] = useState('overview')
 
   const loadCore = useCallback(async () => {
     setLoading(true)
@@ -125,10 +127,13 @@ export default function CampaignDetailPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">{campaign.name}</h1>
-          <p className="text-sm text-muted-foreground">{campaign.code}</p>
+          <p className="text-sm text-muted-foreground">
+            {campaign.code}
+            {campaign.keyword ? ` · ${campaign.keyword}` : ''}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="outline">{t(`status.${campaign.status}`)}</Badge>
+          <CampaignStatusPill status={campaignDisplayStatus(campaign)} className="mr-2 text-sm" />
           {campaign.status !== 'active' && campaign.status !== 'closed' && (
             <Button size="sm" onClick={() => void savePatch({ status: 'active' })} disabled={saving}>
               {t('activate')}
@@ -154,7 +159,7 @@ export default function CampaignDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
         <TabsList className="w-full justify-start">
           <TabsTrigger value="overview">{t('tabs.overview')}</TabsTrigger>
           <TabsTrigger value="entries">{t('tabs.entries')}</TabsTrigger>
@@ -163,7 +168,12 @@ export default function CampaignDetailPage() {
           <TabsTrigger value="settings">{t('tabs.settings')}</TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="pt-4">
-          <CampaignOverviewTab stats={stats} />
+          <CampaignOverviewTab
+            campaign={campaign}
+            fields={fields}
+            stats={stats}
+            onOpenEntries={() => setTab('entries')}
+          />
         </TabsContent>
         <TabsContent value="entries" className="pt-4">
           <CampaignEntriesTab

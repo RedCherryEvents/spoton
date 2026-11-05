@@ -2,6 +2,7 @@ import type { AutomationTriggerType } from '@/types'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { videoPageSite } from '@/lib/whatsapp/media-url'
 import type { StepPath } from './builder-tree'
+import { LANGUAGES, localizeStepConfig, normalizeLanguage } from './language'
 
 // ------------------------------------------------------------
 // Pre-flight config validation for automations about to be activated.
@@ -173,6 +174,7 @@ export function issueStepPath(path: string): { path: StepPath; field?: string } 
 
 function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): void {
   const c = step.step_config ?? {}
+  validateTranslations(step, path, issues)
   switch (step.step_type) {
     case 'send_message':
       if (!nonEmpty(c.text)) {
@@ -365,6 +367,16 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
         issues.push({ path: `${path}.value`, message: 'field value is required' })
       }
       break
+    case 'set_language':
+      if (!nonEmpty(c.value)) {
+        issues.push({ path: `${path}.value`, message: 'language value is required' })
+      } else if (!String(c.value).includes('{{') && !normalizeLanguage(c.value)) {
+        issues.push({
+          path: `${path}.value`,
+          message: `language must be one of ${LANGUAGES.map((l) => l.name).join(', ')}`,
+        })
+      }
+      break
     case 'start_flow':
       if (!nonEmpty(c.flow_id)) {
         issues.push({ path: `${path}.flow_id`, message: 'flow is required' })
@@ -397,6 +409,42 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       break
     default:
       issues.push({ path, message: `unknown step type: ${step.step_type}` })
+  }
+}
+
+/**
+ * Each translation must be a known language, and for buttons / lists
+ * must still pass Meta's limits with the SAME option ids as the
+ * English (conditions and keyword routing depend on them).
+ */
+function validateTranslations(step: StepLike, path: string, issues: ValidationIssue[]): void {
+  const translations = (step.step_config ?? {}).translations
+  if (translations === undefined) return
+  if (!translations || typeof translations !== 'object' || Array.isArray(translations)) {
+    issues.push({ path: `${path}.translations`, message: 'translations must be an object keyed by language code' })
+    return
+  }
+  const isInteractive = step.step_type === 'send_buttons' || step.step_type === 'send_list'
+  const ids = (cfg: Record<string, unknown>): string =>
+    step.step_type === 'send_buttons'
+      ? ((cfg.buttons as { id?: string }[] | undefined) ?? []).map((b) => b?.id).join('|')
+      : ((cfg.sections as { rows?: { id?: string }[] }[] | undefined) ?? [])
+          .flatMap((sec) => sec?.rows ?? [])
+          .map((r) => r?.id)
+          .join('|')
+  for (const code of Object.keys(translations)) {
+    if (!normalizeLanguage(code) || normalizeLanguage(code) !== code) {
+      issues.push({ path: `${path}.translations`, message: `unknown language code "${code}"` })
+      continue
+    }
+    if (!isInteractive) continue
+    const localized = localizeStepConfig(step.step_config, code)
+    const result = validateInteractivePayload(localized)
+    if (!result.ok) {
+      issues.push({ path: `${path}.translations`, message: `${code}: ${result.error}` })
+    } else if (ids(localized) !== ids(step.step_config)) {
+      issues.push({ path: `${path}.translations`, message: `${code}: options must keep the same ids as the English` })
+    }
   }
 }
 

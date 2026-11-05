@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { CAMPAIGN_TYPES } from '@/lib/campaigns/display'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import {
   campaignsNotReadyResponse,
@@ -17,7 +18,22 @@ export async function GET() {
       if (isMissingRelationError(error)) return campaignsNotReadyResponse()
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
-    return NextResponse.json({ campaigns: data ?? [] })
+    // Entry count per campaign, for the list. One head-count each, run
+    // together (an account has a handful of campaigns, not thousands).
+    const campaigns = data ?? []
+    const counts = await Promise.all(
+      campaigns.map((c) =>
+        ctx.supabase
+          .from('campaign_entries')
+          .select('id', { count: 'exact', head: true })
+          .eq('account_id', ctx.accountId)
+          .eq('campaign_id', c.id)
+          .then(({ count }) => count ?? 0),
+      ),
+    )
+    return NextResponse.json({
+      campaigns: campaigns.map((c, i) => ({ ...c, entry_count: counts[i] })),
+    })
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -43,6 +59,10 @@ export async function POST(request: Request) {
         keyword: typeof body?.keyword === 'string' ? body.keyword.trim() || null : null,
         description: typeof body?.description === 'string' ? body.description.trim() || null : null,
         status: 'draft',
+        settings:
+          typeof body?.type === 'string' && (CAMPAIGN_TYPES as string[]).includes(body.type)
+            ? { type: body.type }
+            : {},
       })
       .select('*')
       .single()

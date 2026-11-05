@@ -7,6 +7,7 @@
 // load this file.
 
 import type { CampaignFieldType } from '@/types'
+import type { LanguageCode } from '@/lib/automations/language'
 
 /** Every SPOT ON campaign automation and flow ends with this. */
 export const CAMPAIGN_CLOSING =
@@ -311,35 +312,133 @@ export const CAMPAIGN_FLOWS: PresetFlow[] = [
 ]
 
 // ------------------------------------------------------------
-// SPOTON — Universal Welcome (catch-all, new_message_received)
+// SPOTON — Universal Welcome + language choice
 // ------------------------------------------------------------
 //
-// Sends the campaign menu once per contact: a contact who already has
-// the tag gets nothing, so later conversations (e.g. with an agent) are
-// not interrupted. Keywords always still work, because keyword
-// automations run before this catch-all.
+// Three automations, none of which waits for a reply (a wait would
+// swallow the customer's next message, so a typed keyword like SAVE
+// would be lost):
 //
-// The buttons do NOT wait for a reply. A tap arrives as a normal message
-// whose text is the button title, so it fires that campaign's keyword
-// automation. (Waiting here swallowed the tap and the next message.)
+// 1. Universal Welcome (catch-all, new_message_received): once per
+//    contact (tag "SPOT ON welcomed"), sends the language list.
+// 2. Language chosen (interactive_reply on the list rows): saves the
+//    language as a "Language: …" tag, then sends the campaign menu in
+//    that language. Every later message step that has a translation
+//    for it is sent in that language too.
+// 3. Change language (keyword LANGUAGE / TAAL / ULIMI / ULWIMI / PUO):
+//    sends the list again.
+//
+// Keywords always still work, because keyword automations run before
+// the catch-all. Menu taps arrive as normal messages whose text is the
+// button title, so each fires its campaign's keyword automation.
+//
+// Translations below need a check by a first-language speaker before
+// going live.
 
 export const UNIVERSAL_WELCOME = {
   name: 'SPOTON — Universal Welcome',
   description:
-    'Catch-all for messages that match no keyword. Sends the campaign menu once per contact (tag "SPOT ON welcomed"); each button fires that campaign\'s keyword automation.',
+    'Catch-all for messages that match no keyword. Once per contact (tag "SPOT ON welcomed") it asks the customer to choose a language; the choice is handled by "SPOTON — Language chosen".',
   tagName: 'SPOT ON welcomed',
+}
+
+export const LANGUAGE_CHOSEN = {
+  name: 'SPOTON — Language chosen',
+  description:
+    'Fires when a customer taps a language in the welcome list. Saves it as a "Language: …" tag and sends the campaign menu in that language.',
+}
+
+export const CHANGE_LANGUAGE = {
+  name: 'SPOTON — Change language',
+  description: 'Customer sends LANGUAGE (or TAAL / ULIMI / ULWIMI / PUO) → the language list again.',
+  keywords: ['LANGUAGE', 'LANG', 'TAAL', 'ULIMI', 'ULWIMI', 'PUO'],
+}
+
+/**
+ * The languages offered, in list order. Same codes and names as
+ * LANGUAGES in @/lib/automations/language (a test checks); repeated
+ * here so plain Node can load this file.
+ */
+export const PICKER_LANGUAGES: { code: LanguageCode; name: string }[] = [
+  { code: 'en', name: 'English' },
+  { code: 'af', name: 'Afrikaans' },
+  { code: 'zu', name: 'isiZulu' },
+  { code: 'xh', name: 'isiXhosa' },
+  { code: 'st', name: 'Sesotho' },
+]
+
+/** List row ids, one per language: `lang_<code>`. */
+export const LANGUAGE_ROW_IDS = PICKER_LANGUAGES.map((l) => `lang_${l.code}`)
+
+export const LANGUAGE_PICKER = {
+  kind: 'list' as const,
+  header: 'SPOT ON',
+  body:
+    'Welcome to SPOT ON! 👋 Please choose your language.\n\n' +
+    'Welkom! Kies asseblief jou taal.\n' +
+    'Siyakwamukela! Sicela ukhethe ulimi lwakho.\n' +
+    'Wamkelekile! Nceda ukhethe ulwimi lwakho.\n' +
+    'Rea o amohela! Ka kopo kgetha puo ya hao.',
+  footer: 'Send LANGUAGE to change it later',
+  button_label: 'Choose language',
+  sections: [
+    {
+      title: 'Languages',
+      rows: PICKER_LANGUAGES.map((l) => ({ id: `lang_${l.code}`, title: l.name })),
+    },
+  ],
 }
 
 /** Button title must contain the campaign keyword (taps are matched by title). */
 export const UNIVERSAL_WELCOME_BUTTONS = [
   { id: 'menu_outsurance', title: 'SAVE – OUTsurance', keyword: 'SAVE' },
-  // Share a Coke is Draft: add { id: 'menu_coke', title: 'SHARE – Coca-Cola', keyword: 'SHARE' } back at launch.
+  // Share a Coke: add { id: 'menu_coke', title: 'SHARE – Coca-Cola', keyword: 'SHARE' } to promote it here.
   { id: 'menu_icc', title: 'WINICC2027 – ICC', keyword: 'WINICC2027' },
 ]
 
 export const UNIVERSAL_WELCOME_BODY =
   "Welcome to SPOT ON! 👋\n\nWe have a few deals and competitions running right now. Tap one below to enter, or send its keyword at any time."
 
+/** The campaign menu body per language. Button titles stay the same (they carry the keyword). */
+export const UNIVERSAL_WELCOME_BODY_TRANSLATIONS: Record<Exclude<LanguageCode, 'en'>, string> = {
+  af: 'Welkom by SPOT ON! 👋\n\nOns het tans ’n paar aanbiedinge en kompetisies. Tik op een hieronder om in te skryf, of stuur enige tyd die sleutelwoord.',
+  zu: 'Siyakwamukela ku-SPOT ON! 👋\n\nSinezipesheli nemiqhudelwano embalwa okwamanje. Thepha okukodwa ngezansi ukuze ungenele, noma uthumele igama lakho elingukhiye noma nini.',
+  xh: 'Wamkelekile kwi-SPOT ON! 👋\n\nSinezaphulelo nokhuphiswano oluqhubekayo ngoku. Cofa enye engezantsi ukuze ungenele, okanye uthumele igama layo eliphambili nanini na.',
+  st: 'Rea o amohela ho SPOT ON! 👋\n\nRe na le dithekiso le ditlhodisano tse mmalwa hona jwale. Tobetsa e nngwe ka tlase ho kena, kapa o romele lentswe la yona la sehlooho neng kapa neng.',
+}
+
+export const WELCOME_FOOTER_TRANSLATIONS: Record<Exclude<LanguageCode, 'en'>, string> = {
+  af: 'Stuur TAAL om jou taal te verander',
+  zu: 'Thumela ULIMI ukuze ushintshe ulimi',
+  xh: 'Thumela ULWIMI ukutshintsha ulwimi',
+  st: 'Romela PUO ho fetola puo',
+}
+
+function campaignMenuStep(): PresetStep {
+  const buttons = UNIVERSAL_WELCOME_BUTTONS.map(({ id, title }) => ({ id, title }))
+  return {
+    step_type: 'send_buttons',
+    step_config: {
+      kind: 'buttons',
+      header: 'SPOT ON',
+      body: UNIVERSAL_WELCOME_BODY,
+      footer: 'Send LANGUAGE to change language',
+      buttons,
+      translations: Object.fromEntries(
+        Object.entries(UNIVERSAL_WELCOME_BODY_TRANSLATIONS).map(([code, body]) => [
+          code,
+          { body, footer: WELCOME_FOOTER_TRANSLATIONS[code as Exclude<LanguageCode, 'en'>] },
+        ]),
+      ),
+    },
+  }
+}
+
+function languagePickerStep(): PresetStep {
+  return { step_type: 'send_list', step_config: { ...LANGUAGE_PICKER } }
+}
+
+/** 1. Catch-all: once per contact, ask for a language. */
 export function universalWelcomeSteps(welcomedTagId: string): PresetStep[] {
   return [
     {
@@ -348,20 +447,34 @@ export function universalWelcomeSteps(welcomedTagId: string): PresetStep[] {
       branches: {
         yes: [{ step_type: 'end', step_config: { reason: 'already welcomed' } }],
         no: [
-          {
-            step_type: 'send_buttons',
-            step_config: {
-              kind: 'buttons',
-              header: 'SPOT ON',
-              body: UNIVERSAL_WELCOME_BODY,
-              footer: 'Powered by SpotOn',
-              buttons: UNIVERSAL_WELCOME_BUTTONS.map(({ id, title }) => ({ id, title })),
-            },
-          },
+          languagePickerStep(),
           // Tagged after the send, so a failed send is retried next message.
           { step_type: 'add_tag', step_config: { tag_id: welcomedTagId } },
         ],
       },
     },
   ]
+}
+
+/** 2. A language row was tapped: save it, then the menu in that language. */
+export function languageChosenTriggerConfig() {
+  return { reply_ids: [...LANGUAGE_ROW_IDS] }
+}
+
+export function languageChosenSteps(welcomedTagId: string): PresetStep[] {
+  return [
+    // The tap's text is the row title ("isiZulu").
+    { step_type: 'set_language', step_config: { value: '{{message.text}}' } },
+    { step_type: 'add_tag', step_config: { tag_id: welcomedTagId } },
+    campaignMenuStep(),
+  ]
+}
+
+/** 3. LANGUAGE / TAAL / … → the list again. */
+export function changeLanguageTriggerConfig() {
+  return { keywords: [...CHANGE_LANGUAGE.keywords], match_type: 'exact' as const, case_sensitive: false }
+}
+
+export function changeLanguageSteps(): PresetStep[] {
+  return [languagePickerStep()]
 }

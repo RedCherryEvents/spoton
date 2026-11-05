@@ -1025,6 +1025,7 @@
         "campaign_set_status": "Set Entry Status",
         "campaign_generate_reference": "Generate Entry Reference",
         "campaign_set_field": "Set Campaign Field",
+        "set_language": "Set Language",
         "start_flow": "Start Flow"
       },
       "categories": {
@@ -1279,14 +1280,16 @@
         "percent": "Yes-branch percent",
         "targetNode": "Target step id",
         "endHint": "Stops this automation. No configuration needed.",
-        "fieldKey": "Field key"
+        "fieldKey": "Field key",
+        "languageValue": "Language (name or variable)",
+        "languageHint": "Saves the customer's language as a \"Language: …\" tag. Later messages use their translation for that language. Accepts English, Afrikaans, isiZulu, isiXhosa or Sesotho."
       }
     }
   },
   "Campaigns": {
     "list": {
       "title": "Campaigns",
-      "subtitle": "Track campaign entries and drive automations from them.",
+      "subtitle": "Run competitions, insurance drives and voucher pushes side by side, each with its own flow, QR codes and entry log.",
       "create": "New campaign",
       "createTitle": "Create campaign",
       "loadError": "Couldn't load campaigns.",
@@ -1305,7 +1308,40 @@
         "paused": "Paused",
         "archived": "Archived",
         "closed": "Closed"
-      }
+      },
+      "eyebrow": "The platform · Control",
+      "headline": "Many campaigns,",
+      "headlineAccent": "full control.",
+      "typeLabel": "Type",
+      "types": {
+        "competition": "Competition",
+        "insurance": "Insurance",
+        "voucher": "Voucher",
+        "survey": "Survey",
+        "lead_gen": "Lead generation",
+        "other": "Other"
+      },
+      "displayStatus": {
+        "live": "Live",
+        "scheduled": "Scheduled",
+        "ended": "Ended",
+        "paused": "Paused",
+        "draft": "Draft",
+        "closed": "Closed",
+        "archived": "Archived"
+      },
+      "summaryLive": "Live now",
+      "summaryScheduled": "Scheduled",
+      "summaryDrafts": "Drafts",
+      "summaryEntries": "Total entries",
+      "search": "Search campaigns",
+      "filterAll": "All",
+      "noMatch": "No campaigns match.",
+      "colCampaign": "Campaign",
+      "colType": "Type",
+      "colStatus": "Status",
+      "colEntries": "Entries",
+      "colDates": "Dates"
     },
     "detail": {
       "back": "Back to campaigns",
@@ -1468,7 +1504,12 @@
       "branding": "Client branding",
       "clientName": "Client name",
       "brandColor": "Brand color",
-      "logoUrl": "Logo URL"
+      "logoUrl": "Logo URL",
+      "correctTitle": "Correct answer",
+      "correctHint": "For competitions with a question: entries whose answer matches count as correct. Separate several accepted answers with |. \"B\" also accepts \"B - Durban\".",
+      "correctField": "Question (field)",
+      "correctValue": "Correct answer",
+      "correctNone": "No correct answer"
     },
     "whatsappEntry": {
       "title": "WhatsApp entry link & QR code",
@@ -1552,6 +1593,34 @@
       "notified": "Winner notified.",
       "notifyError": "Couldn't notify the winner.",
       "notifiedAt": "Notified {date} (template {template})"
+    },
+    "overview": {
+      "campaign": "Campaign",
+      "switchCampaign": "Switch campaign",
+      "filter": "Filter",
+      "exportCsv": "Export CSV",
+      "correct": "Correct answers",
+      "correctShort": "Correct",
+      "wrongShort": "Wrong",
+      "topSource": "Top source",
+      "topSourceHint": "{count, plural, =1 {# entry} other {# entries}}",
+      "testHint": "incl. {count} test",
+      "weekHint": "{count} this week",
+      "col": {
+        "entry": "Entry",
+        "name": "Name",
+        "mobile": "Mobile",
+        "source": "Source",
+        "answer": "Answer",
+        "language": "Language",
+        "status": "Status",
+        "time": "Time"
+      },
+      "noEntries": "No entries yet.",
+      "inDraw": "In draw",
+      "footer": "Latest {count} entries · open Entries to search, filter and export",
+      "sources": "Where entries come from",
+      "sourcesEmpty": "Sources appear once entries come in."
     }
   },
   "Flows": {

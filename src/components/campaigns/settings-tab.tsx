@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import type { Campaign, CampaignDuplicateRule, CampaignFieldDefinition } from '@/types'
 import { parseDuplicateRule } from '@/lib/campaigns/duplicate'
+import { CAMPAIGN_TYPES } from '@/lib/campaigns/display'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -31,6 +32,8 @@ export function CampaignSettingsTab({
   const [fieldKey, setFieldKey] = useState('')
   const [fieldLabel, setFieldLabel] = useState('')
   const rule = parseDuplicateRule(campaign.settings?.duplicate_rule)
+  const [correctField, setCorrectField] = useState(campaign.settings?.correct_answer?.field_key ?? '')
+  const [correctValue, setCorrectValue] = useState(campaign.settings?.correct_answer?.value ?? '')
 
   async function addField() {
     const res = await fetch(`/api/campaigns/${campaign.id}/fields`, {
@@ -76,6 +79,60 @@ export function CampaignSettingsTab({
             <Input
               defaultValue={campaign.keyword ?? ''}
               onBlur={(e) => void onSave({ keyword: e.target.value || null })}
+            />
+          </div>
+          <div>
+            <Label>{t('list.typeLabel')}</Label>
+            <select
+              className="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+              value={campaign.settings?.type ?? ''}
+              disabled={saving}
+              onChange={(e) => void onSave({ settings: { type: e.target.value || null } })}
+            >
+              <option value="">—</option>
+              {CAMPAIGN_TYPES.map((ct) => (
+                <option key={ct} value={ct}>
+                  {t(`list.types.${ct}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-3 rounded-xl border border-border bg-card p-4">
+        <h2 className="text-sm font-medium">{t('settings.correctTitle')}</h2>
+        <p className="text-xs text-muted-foreground">{t('settings.correctHint')}</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label>{t('settings.correctField')}</Label>
+            <select
+              className="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+              value={correctField}
+              disabled={saving}
+              onChange={(e) => {
+                setCorrectField(e.target.value)
+                void onSave({ settings: { correct_answer: { field_key: e.target.value, value: correctValue } } })
+              }}
+            >
+              <option value="">{t('settings.correctNone')}</option>
+              {fields.map((f) => (
+                <option key={f.id} value={f.key}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label>{t('settings.correctValue')}</Label>
+            <Input
+              value={correctValue}
+              placeholder="B"
+              disabled={saving || !correctField}
+              onChange={(e) => setCorrectValue(e.target.value)}
+              onBlur={() =>
+                void onSave({ settings: { correct_answer: { field_key: correctField, value: correctValue } } })
+              }
             />
           </div>
         </div>

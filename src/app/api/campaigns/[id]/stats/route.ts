@@ -20,6 +20,7 @@ export async function GET(
       dateFrom: url.searchParams.get('from') || undefined,
       dateTo: url.searchParams.get('to') || undefined,
       trendDays: Number(url.searchParams.get('days')) || 14,
+      correctAnswer: campaign.settings?.correct_answer ?? null,
     })
     return NextResponse.json({ campaign: { id: campaign.id, name: campaign.name }, stats })
   } catch (err) {

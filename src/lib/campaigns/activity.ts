@@ -65,6 +65,8 @@ function labelForStep(type: string, detail?: string): string {
       return detail || 'Entry reference generated'
     case 'campaign_set_field':
       return detail || 'Field captured'
+    case 'set_language':
+      return detail || 'Language chosen'
     case 'capture':
       return detail || 'Question answered'
     case 'validate':

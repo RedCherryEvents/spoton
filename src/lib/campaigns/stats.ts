@@ -3,6 +3,7 @@ import type { CampaignFieldDefinition } from '@/types'
 import { parseAnswers } from './answers'
 import { normalizeEntryStatus, statusFilterValues } from './status'
 import { startOfUtcDay } from './duplicate'
+import { entrySourceLabel, isCorrectAnswer } from './display'
 
 export interface CampaignEntryTotals {
   total: number
@@ -14,6 +15,10 @@ export interface CampaignEntryTotals {
   withdrawn: number
   today: number
   this_week: number
+  /** Answers matching the campaign's correct answer; null when none is set. */
+  correct: number | null
+  /** Non-test entries (test entries come from the Draft test numbers). */
+  test: number
 }
 
 export interface CampaignTrendPoint {
@@ -36,6 +41,8 @@ export interface CampaignStats {
   totals: CampaignEntryTotals
   trend: CampaignTrendPoint[]
   top_answers: TopAnswerField[]
+  /** Where entries came from ("Keyword · SAVE", "Welcome menu", …), most first. */
+  sources: TopAnswerBucket[]
 }
 
 export async function loadCampaignStats(args: {
@@ -45,11 +52,12 @@ export async function loadCampaignStats(args: {
   dateFrom?: string
   dateTo?: string
   trendDays?: number
+  correctAnswer?: { field_key?: string; value?: string } | null
 }): Promise<CampaignStats> {
   const { ctx, campaignId, fields } = args
   let query = ctx.supabase
     .from('campaign_entries')
-    .select('id, status, created_at, answers')
+    .select('id, status, created_at, answers, metadata')
     .eq('account_id', ctx.accountId)
     .eq('campaign_id', campaignId)
   if (args.dateFrom) query = query.gte('created_at', args.dateFrom)
@@ -73,9 +81,12 @@ export async function loadCampaignStats(args: {
     withdrawn: 0,
     today: 0,
     this_week: 0,
+    correct: args.correctAnswer?.field_key && args.correctAnswer.value ? 0 : null,
+    test: 0,
   }
 
   const byDay = new Map<string, number>()
+  const bySource = new Map<string, number>()
   const answerCounts = new Map<string, Map<string, number>>()
 
   for (const row of rows) {
@@ -86,6 +97,14 @@ export async function loadCampaignStats(args: {
     else if (status === 'duplicate') totals.duplicate += 1
     else if (status === 'disqualified') totals.disqualified += 1
     else if (status === 'withdrawn') totals.withdrawn += 1
+
+    if ((row.metadata as Record<string, unknown> | null)?.test === true) totals.test += 1
+    const source = entrySourceLabel({ metadata: row.metadata as Record<string, unknown> | null })
+    bySource.set(source, (bySource.get(source) ?? 0) + 1)
+    if (totals.correct !== null && args.correctAnswer?.field_key) {
+      const answer = parseAnswers(row.answers)[args.correctAnswer.field_key]?.value
+      if (isCorrectAnswer(answer, args.correctAnswer.value)) totals.correct += 1
+    }
 
     const created = row.created_at as string
     if (created >= todayStart) totals.today += 1
@@ -108,7 +127,12 @@ export async function loadCampaignStats(args: {
   const trend = buildTrend(byDay, trendDays)
   const top_answers = buildTopAnswers(fields, answerCounts, totals.completed || totals.total)
 
-  return { totals, trend, top_answers }
+  const sources = [...bySource.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8)
+
+  return { totals, trend, top_answers, sources }
 }
 
 export async function countEntriesByStatus(args: {

@@ -8,11 +8,16 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import {
-  hasOpenReplyWait,
-  keywordAutomationMatches,
+  loadInboundRouting,
+  releaseDeadEndReplyWait,
   runAutomationsForTrigger,
   tryResumeInboundWait,
 } from '@/lib/automations/engine'
+import {
+  anyKeywordAutomationMatches,
+  isOpenReplyWait,
+  type InboundRouting,
+} from '@/lib/automations/inbound-routing'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
@@ -634,29 +639,39 @@ async function processMessage(
     return
   }
 
-  // Parse message content based on type
-  const { contentText, mediaUrl, mediaType, interactiveReplyId } =
-    await parseMessageContent(
-      message,
-      accessToken,
-      mirrorMedia ? { accountId } : null
-    )
-
-  // Resolve swipe-reply context if present. A missing parent is fine —
-  // we just store NULL and the UI renders the message without a quote.
-  let replyToInternalId: string | null = null
-  if (message.context?.id) {
-    replyToInternalId = await lookupInternalIdByMetaId(
-      message.context.id,
-      conversation.id
-    )
-    if (!replyToInternalId) {
-      console.warn(
-        '[webhook] reply context parent not found:',
-        message.context.id
-      )
-    }
-  }
+  // Three independent steps, run together (each database round trip is
+  // ~0.25 s when the function and the database sit in different regions):
+  //   - parse the content (media messages fetch from Meta here);
+  //   - resolve a swipe-reply's parent. A missing parent is fine — we
+  //     store NULL and the UI renders the message without a quote;
+  //   - count the contact's earlier inbound messages, BEFORE the insert
+  //     below, to tell whether this is their very first. Covers a contact
+  //     row that already existed (manual add / CSV import) but had never
+  //     messaged us, which new_contact_created wouldn't catch.
+  const contextId = message.context?.id
+  const [parsed, replyToInternalId, { count: priorCustomerMsgCount }] =
+    await Promise.all([
+      parseMessageContent(
+        message,
+        accessToken,
+        mirrorMedia ? { accountId } : null
+      ),
+      contextId
+        ? lookupInternalIdByMetaId(contextId, conversation.id).then((id) => {
+            if (!id) {
+              console.warn('[webhook] reply context parent not found:', contextId)
+            }
+            return id
+          })
+        : Promise.resolve(null),
+      supabaseAdmin()
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('conversation_id', conversation.id)
+        .eq('sender_type', 'customer'),
+    ])
+  const { contentText, mediaUrl, mediaType, interactiveReplyId } = parsed
+  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
   // Insert message — field names MUST match the messages table schema
   // (see supabase/migrations/001_initial_schema.sql):
@@ -680,17 +695,6 @@ async function processMessage(
       : message.type === 'button'
         ? 'interactive' // template quick-reply tap (issue #478)
         : 'text'        // reaction, unknown → text fallback
-
-  // Determine whether this is the contact's very first inbound message
-  // BEFORE we insert, so the count is accurate. Covers the case where
-  // the contact row already exists (manual add / CSV import) but they've
-  // never messaged us before — which new_contact_created wouldn't catch.
-  const { count: priorCustomerMsgCount } = await supabaseAdmin()
-    .from('messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('conversation_id', conversation.id)
-    .eq('sender_type', 'customer')
-  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
   // Idempotent insert. Meta retries webhook deliveries (a slow ack, a
   // transient 5xx), and each retry replays the exact same message.id. The
@@ -744,35 +748,37 @@ async function processMessage(
     return
   }
 
-  // Update conversation. The unread bump is done DB-side (migration 037's
-  // bump_conversation_on_inbound) rather than as a read-modify-write of the
-  // snapshot loaded above: two inbound messages for the same conversation
-  // can process concurrently, and computing `snapshot + 1` in the app let
-  // both reads see the same value and write the same increment, losing one
-  // (issue #369). The RPC increments in a single UPDATE and refreshes the
-  // last-message summary in the same statement.
-  const { error: convError } = await supabaseAdmin().rpc(
-    'bump_conversation_on_inbound',
-    {
-      p_conversation_id: conversation.id,
-      p_last_message_text: contentText || `[${message.type}]`,
-    }
-  )
-
-  if (convError) {
-    console.error('Error updating conversation:', convError)
-  }
-
-  // A customer writing again re-opens the thread (issue #409). Kept as a
-  // separate conditional statement rather than a `status` field on the
-  // update above so the write can be gated on the row's CURRENT status in
-  // SQL — see the helper for why that matters.
-  await reopenClosedConversation(supabaseAdmin(), conversation)
-
-  // If this contact was a recent broadcast recipient, flag the reply
-  // so the broadcast's `replied_count` advances (via the aggregate
-  // trigger installed in migration 003).
-  await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+  // Everything below the idempotency boundary that doesn't depend on
+  // anything else goes out together:
+  //   - the unread bump, done DB-side (migration 037's
+  //     bump_conversation_on_inbound) rather than as a read-modify-write:
+  //     two inbound messages for the same conversation can process
+  //     concurrently, and computing `snapshot + 1` here lost one (#369);
+  //   - re-opening a closed thread (#409), a separate statement so the
+  //     write is gated on the row's CURRENT status in SQL;
+  //   - flagging a reply to a recent broadcast, so the broadcast's
+  //     replied_count advances (migration 003's aggregate trigger);
+  //   - the routing data: active automations for every inbound trigger
+  //     type and the contact's pending reply wait, used for every
+  //     decision below without further queries.
+  const [routing] = await Promise.all([
+    loadInboundRouting(accountId, contactRecord.id).catch(
+      (err): InboundRouting => {
+        console.error('[automations] inbound routing load failed:', err)
+        return { automations: [], replyWait: null }
+      }
+    ),
+    supabaseAdmin()
+      .rpc('bump_conversation_on_inbound', {
+        p_conversation_id: conversation.id,
+        p_last_message_text: contentText || `[${message.type}]`,
+      })
+      .then(({ error }: { error: unknown }) => {
+        if (error) console.error('Error updating conversation:', error)
+      }),
+    reopenClosedConversation(supabaseAdmin(), conversation),
+    flagBroadcastReplyIfAny(accountId, contactRecord.id),
+  ])
 
   // ============================================================
   // Flow runner dispatch.
@@ -789,9 +795,7 @@ async function processMessage(
   //
   // Awaited (not fire-and-forget) because we need the `consumed`
   // result before deciding whether to dispatch automations. The
-  // runner has its own try/catch and never throws. Accounts with
-  // no active flows take the runner's early-exit "no_match" path
-  // basically for free (one indexed SELECT for the active run).
+  // runner has its own try/catch and never throws.
   // ============================================================
   // Automations get priority over STARTING a flow in two cases (a flow
   // run already in progress still advances):
@@ -800,11 +804,22 @@ async function processMessage(
   //   - a first message that is a campaign keyword goes to that keyword
   //     automation, not to a first-message flow (keyword flows can still
   //     start, as before).
+  //
+  // A reply wait with no steps after it is released first: resuming it
+  // would only swallow this message (a campaign keyword, say).
   const inboundText = contentText ?? message.text?.body ?? ''
-  const answeringAutomation = await hasOpenReplyWait(accountId, contactRecord.id).catch(() => false)
+  let replyWait = routing.replyWait
+  if (
+    replyWait &&
+    isOpenReplyWait(replyWait) &&
+    (await releaseDeadEndReplyWait(replyWait).catch(() => false))
+  ) {
+    replyWait = null
+  }
+  const answeringAutomation = isOpenReplyWait(replyWait)
   const firstMessageIsKeyword =
     isFirstInboundMessage && !answeringAutomation
-      ? await keywordAutomationMatches(accountId, inboundText).catch(() => false)
+      ? anyKeywordAutomationMatches(routing.automations, inboundText)
       : false
   const flowResult = await dispatchInboundToFlows({
     accountId,
@@ -836,6 +851,7 @@ async function processMessage(
         conversationId: conversation.id,
         messageText: inboundText,
         interactiveReplyId,
+        pending: replyWait,
       }).catch((err) => {
         console.error('[automations] inbound wait resume failed:', err)
         return false
@@ -874,6 +890,9 @@ async function processMessage(
         // trigger's exact-id match.
         interactive_reply_id: interactiveReplyId ?? undefined,
       },
+      // Loaded once above; the contact was resolved for this account.
+      prefetched: routing.automations,
+      contactVerified: true,
     }).catch((err) => {
       console.error('[automations] dispatch failed:', err)
       return 0

@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const h = vi.hoisted(() => ({
   runAutomationsForTrigger: vi.fn(),
   tryResumeInboundWait: vi.fn(async () => false),
-  hasOpenReplyWait: vi.fn(async () => false),
-  keywordAutomationMatches: vi.fn(async () => false),
+  loadInboundRouting: vi.fn(),
+  releaseDeadEndReplyWait: vi.fn(async () => false),
   dispatchInboundToFlows: vi.fn(),
   dispatchInboundToAiReply: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
@@ -195,8 +195,8 @@ vi.mock('@/lib/whatsapp/template-webhook', () => ({
 vi.mock('@/lib/automations/engine', () => ({
   runAutomationsForTrigger: h.runAutomationsForTrigger,
   tryResumeInboundWait: h.tryResumeInboundWait,
-  hasOpenReplyWait: h.hasOpenReplyWait,
-  keywordAutomationMatches: h.keywordAutomationMatches,
+  loadInboundRouting: h.loadInboundRouting,
+  releaseDeadEndReplyWait: h.releaseDeadEndReplyWait,
 }))
 vi.mock('@/lib/flows/engine', () => ({
   dispatchInboundToFlows: h.dispatchInboundToFlows,
@@ -279,8 +279,8 @@ beforeEach(() => {
   h.dispatchInboundToAiReply.mockResolvedValue(undefined)
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
   h.tryResumeInboundWait.mockResolvedValue(false)
-  h.hasOpenReplyWait.mockResolvedValue(false)
-  h.keywordAutomationMatches.mockResolvedValue(false)
+  h.loadInboundRouting.mockResolvedValue({ automations: [], replyWait: null })
+  h.releaseDeadEndReplyWait.mockResolvedValue(false)
   h.runAutomationsForTrigger.mockImplementation(() => {
     h.state.automationStarted++
     return new Promise<number>((resolve) => {
@@ -557,18 +557,64 @@ describe('inbound webhook: automations before starting a flow', () => {
     expect(newRuns()).toBe('all')
   })
 
+  const KEYWORD_AUTOMATION = {
+    id: 'auto-kw',
+    trigger_type: 'keyword_match',
+    is_active: true,
+    trigger_config: { keywords: ['hello'], match_type: 'exact' },
+  }
+  const wait = (runAt: string) => ({
+    id: 'wait-1',
+    automation_id: 'auto-q',
+    run_at: runAt,
+    next_step_position: 2,
+    parent_step_id: null,
+    branch: null,
+    log_id: 'log-1',
+  })
+  const FUTURE = '2999-01-01T00:00:00Z'
+
   it("a first message that is a campaign keyword doesn't start a first-message flow", async () => {
-    h.keywordAutomationMatches.mockResolvedValue(true)
+    h.loadInboundRouting.mockResolvedValue({ automations: [KEYWORD_AUTOMATION], replyWait: null })
     await runWebhook()
-    expect(h.keywordAutomationMatches).toHaveBeenCalledWith('acc-1', 'hello')
+    expect(h.loadInboundRouting).toHaveBeenCalledWith('acc-1', 'contact-1')
     expect(newRuns()).toBe('keyword_only')
   })
 
   it("no flow starts while the contact is answering an automation's question", async () => {
-    h.hasOpenReplyWait.mockResolvedValue(true)
+    h.loadInboundRouting.mockResolvedValue({ automations: [], replyWait: wait(FUTURE) })
     await runWebhook()
-    expect(h.hasOpenReplyWait).toHaveBeenCalledWith('acc-1', 'contact-1')
     expect(newRuns()).toBe('none')
+    expect(h.tryResumeInboundWait).toHaveBeenCalledWith(
+      expect.objectContaining({ pending: expect.objectContaining({ id: 'wait-1' }) }),
+    )
+  })
+
+  it('a wait with nothing after it is released, so the message routes normally', async () => {
+    h.loadInboundRouting.mockResolvedValue({ automations: [], replyWait: wait(FUTURE) })
+    h.releaseDeadEndReplyWait.mockResolvedValue(true)
+    await runWebhook()
+    expect(newRuns()).toBe('all')
+    expect(h.tryResumeInboundWait).toHaveBeenCalledWith(expect.objectContaining({ pending: null }))
+  })
+
+  it('an expired wait is not checked for release and does not block flows', async () => {
+    h.loadInboundRouting.mockResolvedValue({
+      automations: [],
+      replyWait: wait('2000-01-01T00:00:00Z'),
+    })
+    await runWebhook()
+    expect(h.releaseDeadEndReplyWait).not.toHaveBeenCalled()
+    expect(newRuns()).toBe('all')
+  })
+
+  it('dispatches with the prefetched automations and skips the ownership query', async () => {
+    h.loadInboundRouting.mockResolvedValue({ automations: [KEYWORD_AUTOMATION], replyWait: null })
+    await runWebhook()
+    for (const [input] of h.runAutomationsForTrigger.mock.calls) {
+      expect(input).toMatchObject({ prefetched: [KEYWORD_AUTOMATION], contactVerified: true })
+    }
+    expect(h.runAutomationsForTrigger).toHaveBeenCalled()
   })
 })
 

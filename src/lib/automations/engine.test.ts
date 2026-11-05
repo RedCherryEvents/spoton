@@ -100,7 +100,8 @@ vi.mock("./admin-client", () => {
           ? s.parent_step_id === parent[2] && (!branch || s.branch === branch[2])
           : s.parent_step_id == null,
       );
-      return { data: scoped.filter((s) => Number(s.position) >= from), error: null };
+      const rows = scoped.filter((s) => Number(s.position) >= from);
+      return { data: rows, count: rows.length, error: null };
     }
     return { data: null, error: null };
   }
@@ -168,8 +169,7 @@ import {
   triggerMatches,
   interpolateTemplate,
   tryResumeInboundWait,
-  keywordAutomationMatches,
-  hasOpenReplyWait,
+  releaseDeadEndReplyWait,
 } from "./engine";
 import { engineSendText, engineSendInteractive, engineSendMedia } from "./meta-send";
 import { addCampaignEntry, setCampaignFieldValue } from "./campaign-ops";
@@ -1246,23 +1246,57 @@ describe("BMW test-drive automation", () => {
 });
 
 describe("webhook routing helpers", () => {
-  it("keywordAutomationMatches: true only when an active keyword automation matches", async () => {
-    h.state.automations = [
-      { id: "os", account_id: ACCOUNT, trigger_type: "keyword_match", trigger_config: outsuranceTriggerConfig("c"), is_active: true },
-    ];
-    expect(await keywordAutomationMatches(ACCOUNT, "SAVE")).toBe(true);
-    expect(await keywordAutomationMatches(ACCOUNT, "save please")).toBe(true);
-    expect(await keywordAutomationMatches(ACCOUNT, "hello")).toBe(false);
-    expect(await keywordAutomationMatches(ACCOUNT, "   ")).toBe(false);
+  const WAIT = {
+    id: "p1",
+    automation_id: "a1",
+    account_id: ACCOUNT,
+    user_id: "u1",
+    contact_id: "c1",
+    log_id: "log1",
+    parent_step_id: null,
+    branch: null,
+    next_step_position: 1,
+    run_at: new Date(Date.now() + 3_600_000).toISOString(),
+    expect_var_key: "answer",
+    context: {},
+  };
+
+  it("releaseDeadEndReplyWait: releases a wait with no steps after it", async () => {
+    h.state.steps = [step(0, "ask_question", { text: "Which campaign?" })];
+    h.state.pendingRow = { id: "p1" };
+    expect(await releaseDeadEndReplyWait(WAIT)).toBe(true);
+    expect(h.state.logUpdates).toContainEqual(expect.objectContaining({ status: "success" }));
   });
 
-  it("hasOpenReplyWait: true for an unexpired wait, false once it has expired", async () => {
-    h.state.pendingRow = { id: "p1", run_at: new Date(Date.now() + 3_600_000).toISOString() };
-    expect(await hasOpenReplyWait(ACCOUNT, "c1")).toBe(true);
-    h.state.pendingRow = { id: "p1", run_at: new Date(Date.now() - 60_000).toISOString() };
-    expect(await hasOpenReplyWait(ACCOUNT, "c1")).toBe(false);
-    h.state.pendingRow = null;
-    expect(await hasOpenReplyWait(ACCOUNT, "c1")).toBe(false);
+  it("releaseDeadEndReplyWait: keeps a wait whose run continues after the answer", async () => {
+    h.state.steps = [
+      step(0, "ask_question", { text: "Who will you share a Coke with?" }),
+      step(1, "send_message", { text: "Thanks!" }),
+    ];
+    h.state.pendingRow = { id: "p1" };
+    expect(await releaseDeadEndReplyWait(WAIT)).toBe(false);
+  });
+
+  it("runAutomationsForTrigger: prefetched + contactVerified skip both lookups", async () => {
+    // The ownership query would refuse this contact; the webhook vouches for it.
+    h.state.owned = null;
+    h.state.steps = [step(0, "add_note", { text: "hi" })];
+    const prefetched = [
+      { ...messageTrigger(), trigger_type: "new_message_received" },
+      { ...messageTrigger(), id: "other", trigger_type: "keyword_match", trigger_config: { keywords: ["zzz"] } },
+    ];
+    h.state.fromCalls = [];
+    const matched = await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { message_text: "hello" },
+      prefetched: prefetched as never,
+      contactVerified: true,
+    });
+    expect(matched).toBe(1);
+    expect(h.state.fromCalls).not.toContain("automations");
+    expect(h.state.logInserts).toHaveLength(1);
   });
 });
 

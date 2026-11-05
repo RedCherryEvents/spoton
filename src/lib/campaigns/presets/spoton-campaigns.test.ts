@@ -4,8 +4,15 @@ import {
   CAMPAIGN_CLOSING,
   CAMPAIGN_FLOWS,
   UNIVERSAL_WELCOME_BODY,
+  UNIVERSAL_WELCOME_BODY_TRANSLATIONS,
   UNIVERSAL_WELCOME_BUTTONS,
+  LANGUAGE_PICKER,
+  PICKER_LANGUAGES,
   bmwSteps,
+  changeLanguageSteps,
+  changeLanguageTriggerConfig,
+  languageChosenSteps,
+  languageChosenTriggerConfig,
   universalWelcomeSteps,
   bmwTriggerConfig,
   type PresetStep,
@@ -15,6 +22,7 @@ import { shareACokeTriggerConfig } from "./share-a-coke";
 import { validateStepsForActivation, validateTriggerForActivation } from "@/lib/automations/validate";
 import { keywordTextMatches } from "@/lib/automations/keyword-match";
 import { validateFlowForActivation } from "@/lib/flows/validate";
+import { LANGUAGES, localizeStepConfig, normalizeLanguage } from "@/lib/automations/language";
 
 const CAMPAIGN = "camp-bmw";
 const steps = bmwSteps(CAMPAIGN);
@@ -106,29 +114,72 @@ describe("OUTsurance flow", () => {
   });
 });
 
-describe("Universal Welcome", () => {
-  const steps = universalWelcomeSteps("tag-welcomed");
+describe("Universal Welcome + language choice", () => {
+  const welcome = universalWelcomeSteps("tag-welcomed");
+  const chosen = languageChosenSteps("tag-welcomed");
+  const change = changeLanguageSteps();
   // Live trigger configs of the campaign automations the buttons point at.
   const triggers = {
     SAVE: outsuranceTriggerConfig("camp-o"),
     SHARE: shareACokeTriggerConfig("camp-c"),
     WINICC2027: { keywords: ["WINICC2027"], match_type: "contains" as const },
   };
+  const allSteps = (steps: PresetStep[]): PresetStep[] =>
+    steps.flatMap((s) => [s, ...allSteps(s.branches?.yes ?? []), ...allSteps(s.branches?.no ?? [])]);
 
-  it("passes the activation checks", () => {
+  it("all three pass the activation checks", () => {
     expect(validateTriggerForActivation("new_message_received", {})).toEqual([]);
-    expect(validateStepsForActivation(steps)).toEqual([]);
+    expect(validateTriggerForActivation("interactive_reply", languageChosenTriggerConfig())).toEqual([]);
+    expect(validateTriggerForActivation("keyword_match", changeLanguageTriggerConfig())).toEqual([]);
+    expect(validateStepsForActivation(welcome)).toEqual([]);
+    expect(validateStepsForActivation(chosen)).toEqual([]);
+    expect(validateStepsForActivation(change)).toEqual([]);
   });
 
-  it("only sends to contacts without the welcomed tag, and doesn't wait for a reply", () => {
-    const cond = steps[0];
+  it("never waits for a reply, so a typed keyword is never swallowed", () => {
+    for (const s of allSteps([...welcome, ...chosen, ...change])) {
+      expect(s.step_config).not.toHaveProperty("wait_for_reply");
+      expect(s.step_type).not.toBe("ask_question");
+    }
+  });
+
+  it("welcome asks for a language once per contact", () => {
+    const cond = welcome[0];
     expect(cond.step_config).toEqual({ subject: "tag_presence", operand: "tag-welcomed" });
     expect(cond.branches!.yes!.map((s) => s.step_type)).toEqual(["end"]);
-    expect(cond.branches!.no!.map((s) => s.step_type)).toEqual(["send_buttons", "add_tag"]);
-    expect(cond.branches!.no![0].step_config).not.toHaveProperty("wait_for_reply");
+    expect(cond.branches!.no!.map((s) => s.step_type)).toEqual(["send_list", "add_tag"]);
   });
 
-  it("each button fires its own campaign's automation and no other", () => {
+  it("offers the same languages the engine understands, and every row resolves", () => {
+    expect(PICKER_LANGUAGES).toEqual(LANGUAGES.map(({ code, name }) => ({ code, name })));
+    const rows = LANGUAGE_PICKER.sections.flatMap((s) => s.rows);
+    expect(rows.map((r) => r.id)).toEqual(languageChosenTriggerConfig().reply_ids);
+    for (const r of rows) {
+      expect(normalizeLanguage(r.title)).toBe(r.id.replace("lang_", ""));
+      expect(r.title.length).toBeLessThanOrEqual(24);
+    }
+  });
+
+  it("a tapped language is saved, then the menu goes out in that language", () => {
+    expect(chosen.map((s) => s.step_type)).toEqual(["set_language", "add_tag", "send_buttons"]);
+    expect(chosen[0].step_config.value).toBe("{{message.text}}");
+    const menu = chosen[2].step_config;
+    for (const [code, body] of Object.entries(UNIVERSAL_WELCOME_BODY_TRANSLATIONS)) {
+      const sent = localizeStepConfig(menu, code) as Record<string, unknown>;
+      expect(sent.body).toBe(body);
+      expect(sent.buttons).toEqual(menu.buttons);
+      expect(sent).not.toHaveProperty("translations");
+    }
+    expect((localizeStepConfig(menu, "en") as Record<string, unknown>).body).toBe(UNIVERSAL_WELCOME_BODY);
+  });
+
+  it("change-language keywords don't collide with a campaign keyword", () => {
+    for (const k of changeLanguageTriggerConfig().keywords) {
+      for (const trigger of Object.values(triggers)) expect(keywordTextMatches(trigger, k)).toBe(false);
+    }
+  });
+
+  it("each menu button fires its own campaign's automation and no other", () => {
     for (const b of UNIVERSAL_WELCOME_BUTTONS) {
       expect(b.title.length).toBeLessThanOrEqual(20);
       for (const [keyword, trigger] of Object.entries(triggers)) {

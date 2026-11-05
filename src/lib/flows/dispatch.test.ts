@@ -350,6 +350,17 @@ describe("dispatchInboundToFlows — automations take priority over new runs", (
     expect(startedRuns()).toHaveLength(1);
   });
 
+  it("a keyword flow beats an older first-message flow", async () => {
+    // Oldest first, as the query returns them: the first-message flow
+    // was created before the keyword flow. Creation order used to decide.
+    const older = { ...FIRST_MESSAGE_FLOW, id: "flow-first", created_at: "2025-01-01T00:00:00Z" };
+    h.state.flows = [older, KEYWORD_FLOW];
+    const result = await first("all", "order status please");
+    expect(result.consumed).toBe(true);
+    expect(startedRuns()).toHaveLength(1);
+    expect(startedRuns()[0].row.flow_id).toBe("flow-1");
+  });
+
   it("none: no flow starts while the contact answers an automation's question", async () => {
     h.state.flows = [KEYWORD_FLOW];
     const result = await first("none", "order status");

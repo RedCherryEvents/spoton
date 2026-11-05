@@ -48,6 +48,7 @@ import {
   Flag,
   Copy,
   Workflow,
+  Languages,
   AlertTriangle,
 } from "lucide-react"
 
@@ -171,6 +172,7 @@ const STEP_META: Record<AutomationStepType, StepMeta> = {
   campaign_generate_reference: { label: "campaign_generate_reference", icon: Hash, border: "border-l-violet-500" },
   campaign_set_field: { label: "campaign_set_field", icon: PencilLine, border: "border-l-violet-500" },
   start_flow: { label: "start_flow", icon: Workflow, border: "border-l-amber-500" },
+  set_language: { label: "set_language", icon: Languages, border: "border-l-primary" },
 }
 
 const BRANCHING_STEPS = new Set<AutomationStepType>(["condition", "random_split"])
@@ -196,6 +198,7 @@ const ADDABLE_GROUPS: { category: string; types: AutomationStepType[] }[] = [
       "set_conversation_status",
       "notify_agent",
       "close_conversation",
+      "set_language",
     ],
   },
   {
@@ -316,6 +319,8 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return { stage_id: "", title: "", value: 0 }
     case "upsert_contact":
       return { field: "name", value: "" }
+    case "set_language":
+      return { value: "{{vars.language}}" }
     default:
       return {}
   }
@@ -2521,6 +2526,18 @@ function StepEditor({
             />
           </FieldBlock>
         </>
+      )
+    case "set_language":
+      return (
+        <FieldBlock label={t("config.languageValue")}>
+          <Input
+            value={(cfg.value as string) ?? ""}
+            onChange={(e) => set({ value: e.target.value })}
+            placeholder="{{vars.language}}"
+            className="bg-muted text-foreground"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">{t("config.languageHint")}</p>
+        </FieldBlock>
       )
     case "start_flow":
       return (

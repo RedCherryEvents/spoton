@@ -1025,6 +1025,7 @@
         "campaign_set_status": "참가 상태 설정",
         "campaign_generate_reference": "참가 번호 생성",
         "campaign_set_field": "캠페인 필드 설정",
+        "set_language": "언어 설정",
         "start_flow": "플로우 시작"
       },
       "categories": {
@@ -1279,14 +1280,16 @@
         "percent": "Yes 분기 비율",
         "targetNode": "대상 단계 id",
         "endHint": "이 자동화를 종료합니다. 추가 설정이 필요 없습니다.",
-        "fieldKey": "필드 키"
+        "fieldKey": "필드 키",
+        "languageValue": "언어 (이름 또는 변수)",
+        "languageHint": "고객의 언어를 \"Language: …\" 태그로 저장합니다. 이후 메시지는 해당 언어의 번역을 사용합니다."
       }
     }
   },
   "Campaigns": {
     "list": {
       "title": "캠페인",
-      "subtitle": "캠페인 참가를 추적하고 자동화와 연결하세요.",
+      "subtitle": "경품 행사, 보험 캠페인, 쿠폰 프로모션을 각자의 흐름, QR 코드, 응모 기록과 함께 동시에 운영하세요.",
       "create": "새 캠페인",
       "createTitle": "캠페인 만들기",
       "loadError": "캠페인을 불러올 수 없습니다.",
@@ -1305,7 +1308,40 @@
         "paused": "일시 중지",
         "archived": "보관됨",
         "closed": "종료됨"
-      }
+      },
+      "eyebrow": "플랫폼 · 관리",
+      "headline": "여러 캠페인,",
+      "headlineAccent": "완벽한 관리.",
+      "typeLabel": "유형",
+      "types": {
+        "competition": "경품 행사",
+        "insurance": "보험",
+        "voucher": "쿠폰",
+        "survey": "설문",
+        "lead_gen": "리드 수집",
+        "other": "기타"
+      },
+      "displayStatus": {
+        "live": "진행 중",
+        "scheduled": "예약됨",
+        "ended": "종료됨",
+        "paused": "일시 중지",
+        "draft": "초안",
+        "closed": "마감",
+        "archived": "보관됨"
+      },
+      "summaryLive": "진행 중",
+      "summaryScheduled": "예약됨",
+      "summaryDrafts": "초안",
+      "summaryEntries": "총 응모",
+      "search": "캠페인 검색",
+      "filterAll": "전체",
+      "noMatch": "일치하는 캠페인이 없습니다.",
+      "colCampaign": "캠페인",
+      "colType": "유형",
+      "colStatus": "상태",
+      "colEntries": "응모",
+      "colDates": "기간"
     },
     "detail": {
       "back": "캠페인으로 돌아가기",
@@ -1468,7 +1504,12 @@
       "branding": "클라이언트 브랜딩",
       "clientName": "클라이언트 이름",
       "brandColor": "브랜드 색상",
-      "logoUrl": "로고 URL"
+      "logoUrl": "로고 URL",
+      "correctTitle": "정답",
+      "correctHint": "질문이 있는 경품 행사용: 답변이 일치하는 응모를 정답으로 집계합니다. 여러 정답은 | 로 구분하세요.",
+      "correctField": "질문 (필드)",
+      "correctValue": "정답",
+      "correctNone": "정답 없음"
     },
     "whatsappEntry": {
       "title": "WhatsApp 참여 링크 및 QR 코드",
@@ -1552,6 +1593,34 @@
       "notified": "당첨자에게 알렸습니다.",
       "notifyError": "당첨자에게 알리지 못했습니다.",
       "notifiedAt": "{date}에 알림 (템플릿 {template})"
+    },
+    "overview": {
+      "campaign": "캠페인",
+      "switchCampaign": "캠페인 전환",
+      "filter": "필터",
+      "exportCsv": "CSV 내보내기",
+      "correct": "정답",
+      "correctShort": "정답",
+      "wrongShort": "오답",
+      "topSource": "주요 유입 경로",
+      "topSourceHint": "{count}건",
+      "testHint": "테스트 {count}건 포함",
+      "weekHint": "이번 주 {count}건",
+      "col": {
+        "entry": "응모",
+        "name": "이름",
+        "mobile": "휴대폰",
+        "source": "경로",
+        "answer": "답변",
+        "language": "언어",
+        "status": "상태",
+        "time": "시간"
+      },
+      "noEntries": "아직 응모가 없습니다.",
+      "inDraw": "추첨 대상",
+      "footer": "최근 {count}건 · 검색, 필터, 내보내기는 응모 탭에서",
+      "sources": "응모 유입 경로",
+      "sourcesEmpty": "응모가 들어오면 유입 경로가 표시됩니다."
     }
   },
   "Flows": {
